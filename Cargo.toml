@@ -1,0 +1,8 @@
+[package]
+name = "unlisp-llvm"
+version = "0.1.0"
+authors = ["oleh.palianytsia <oleh.palianytsia@protonmail.com>"]
+edition = "2018"
+
+[dependencies]
+inkwell = { git = "https://github.com/TheDan64/inkwell", branch = "llvm7-0" }
