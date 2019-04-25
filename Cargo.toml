@@ -5,4 +5,5 @@ authors = ["oleh.palianytsia <oleh.palianytsia@protonmail.com>"]
 edition = "2018"
 
 [dependencies]
+libc = "0.2"
 inkwell = { git = "https://github.com/TheDan64/inkwell", branch = "llvm7-0" }

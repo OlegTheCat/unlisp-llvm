@@ -1,3 +1,5 @@
+#![feature(untagged_unions)]
+
 use inkwell::OptimizationLevel;
 use inkwell::builder::Builder;
 use inkwell::context::Context;
@@ -6,6 +8,16 @@ use inkwell::module::Module;
 use inkwell::module::Linkage;
 use inkwell::targets::{InitializationConfig, Target};
 use std::error::Error;
+
+extern crate libc;
+
+mod pushback_reader;
+mod cons;
+mod error;
+mod lexer;
+mod reader;
+mod object;
+mod runtime;
 
 /// Convenience type alias for the `sum` function.
 ///
