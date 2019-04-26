@@ -4,6 +4,10 @@ use std::collections::HashMap;
 use std::ffi::CStr;
 use std::ptr;
 
+use inkwell::context::Context;
+use inkwell::types::StructType;
+use inkwell::AddressSpace;
+
 type InternedSymbols = HashMap<String, *mut Symbol>;
 
 static mut interned_symbols: Option<InternedSymbols> = None;
@@ -24,7 +28,7 @@ fn interned_symbols_mut() -> &'static mut InternedSymbols {
 pub union UntaggedObject {
     int: i64,
     list: *mut List,
-    sym: Symbol
+    sym: *mut Symbol
 }
 
 #[repr(C)]
@@ -38,6 +42,16 @@ pub enum ObjType {
 pub struct Object {
     ty: ObjType,
     obj: UntaggedObject
+}
+
+impl Object {
+    pub fn gen_llvm_def(context: &Context) {
+        let int8_ptr_ty = context.i8_type().ptr_type(AddressSpace::Generic);
+        let int32_ty = context.i32_type();
+
+        let struct_ty = context.opaque_struct_type("unlisp_rt_object");
+        struct_ty.set_body(&[int8_ptr_ty.into(), int32_ty.into()], false);
+    }
 }
 
 #[repr(C)]
