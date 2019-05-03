@@ -24,6 +24,7 @@ mod object;
 mod pushback_reader;
 mod reader;
 mod runtime;
+mod codegen;
 
 /// Convenience type alias for the `sum` function.
 ///
@@ -32,35 +33,16 @@ mod runtime;
 type SumFunc = unsafe extern "C" fn(u64, u64, u64) -> u64;
 
 fn main() -> Result<(), Box<Error>> {
-    ExecutionEngine::link_in_mc_jit();
-    let context = Context::create();
-    let module1 = context.create_module("foo");
-    let module2 = context.create_module("bar");
-    let builder = context.create_builder();
-    let execution_engine = module1.create_jit_execution_engine(OptimizationLevel::None)?;
+    let ctx = Context::create();
 
-    runtime::init(&context, &module1);
+    let module = codegen::compile_form(&ctx, object::LispForm::Integer(300));
+    let execution_engine = module.create_jit_execution_engine(OptimizationLevel::None)?;
 
-    execution_engine.add_module(&module2).unwrap();
-    compile_global_nil(&context, &module2, &builder);
-
-    let f2 = compile_get_nil(&context, &module2, &builder, &execution_engine);
-
-
-    unsafe { println!("nil = {}", f2.call() ) }
-
-    let module3 = context.create_module("baz");
-    let execution_engine = module3.create_jit_execution_engine(OptimizationLevel::None)?;
-    // execution_engine.add_module(&module3).unwrap();
-
-    compile_global_nil2(&context, &module3, &builder);
-
-    let f3 = compile_get_nil2(&context, &module3, &builder, &execution_engine);
-
-
-    unsafe { println!("nil = {}", f3.call() ) }
-
-
+    unsafe {
+        let f: JitFunction<unsafe extern fn() -> runtime::Object> =
+            execution_engine.get_function("__repl_form").unwrap();
+        println!("call result: {}", f.call());
+    }
 
     Ok(())
 }

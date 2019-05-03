@@ -3,10 +3,11 @@ use libc::c_void;
 use std::collections::HashMap;
 use std::ffi::CStr;
 use std::ptr;
+use std::fmt;
 
 use inkwell::context::Context;
 use inkwell::module::{Linkage, Module};
-use inkwell::types::BasicTypeEnum;
+use inkwell::types::{BasicType, BasicTypeEnum};
 use inkwell::AddressSpace;
 
 type InternedSymbols = HashMap<String, *mut Symbol>;
@@ -124,6 +125,15 @@ impl Object {
     }
 }
 
+impl fmt::Display for Object {
+    fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
+        match self.ty {
+            ObjType::Int64 => write!(f, "Object[int64, {}]", unsafe { self.obj.int }),
+            _ => panic!("unsupported type")
+        }
+    }
+}
+
 #[repr(C)]
 pub struct List {
     val: *mut Object,
@@ -212,6 +222,7 @@ pub fn init(ctx: &Context, module: &Module) {
     Function::gen_llvm_def(ctx);
 
     unlisp_rt_intern_sym_gen_def(ctx, module);
+    unlisp_rt_object_from_int_gen_def(ctx, module);
 }
 
 #[no_mangle]
@@ -224,15 +235,24 @@ static __INTERN: extern "C" fn(name: *const c_char) -> *mut Symbol = unlisp_rt_i
 
 fn unlisp_rt_intern_sym_gen_def(ctx: &Context, module: &Module) {
     let arg_ty = ctx.i8_type().ptr_type(AddressSpace::Generic);
-    let sym_struct_ty = module.get_type("unlisp_rt_symbol");
-    let sym_struct_ptr_ty = match sym_struct_ty {
-        Some(BasicTypeEnum::StructType(ty)) => ty.ptr_type(AddressSpace::Generic),
-        _ => panic!("couldn't find unlisp_rt_symbol"),
-    };
+    let sym_struct_ty = module.get_type("unlisp_rt_symbol").unwrap();
+    let sym_struct_ptr_ty = sym_struct_ty.as_struct_type().ptr_type(AddressSpace::Generic);
 
     let fn_type = sym_struct_ptr_ty.fn_type(&[arg_ty.into()], false);
     module.add_function("unlisp_rt_intern_sym", fn_type, Some(Linkage::External));
 }
 
 #[no_mangle]
-pub extern unlisp_rt_object_from_int() ->
+pub extern fn unlisp_rt_object_from_int(i: i64) -> Object {
+    Object::from_int(i)
+}
+
+#[used]
+static __OBJ_FROM_INT: extern "C" fn(i: i64) -> Object = unlisp_rt_object_from_int;
+
+fn unlisp_rt_object_from_int_gen_def(ctx: &Context, module: &Module) {
+    let arg_ty = ctx.i64_type();
+    let obj_struct_ty = module.get_type("unlisp_rt_object").unwrap();
+    let fn_type = obj_struct_ty.fn_type(&[arg_ty.into()], false);
+    module.add_function("unlisp_rt_object_from_int", fn_type, Some(Linkage::External));
+}
