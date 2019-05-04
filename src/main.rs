@@ -32,10 +32,22 @@ mod codegen;
 /// do `unsafe` operations internally.
 type SumFunc = unsafe extern "C" fn(u64, u64, u64) -> u64;
 
+pub fn read(s: impl Into<String>) -> object::LispForm {
+    let s = s.into();
+    let mut bytes = s.as_bytes();
+    let mut reader = reader::Reader::create(&mut bytes);
+    reader.read_form().unwrap().unwrap()
+}
+
+
 fn main() -> Result<(), Box<Error>> {
     let ctx = Context::create();
+    let module = codegen::compile_toplevel(&ctx, vec![read("(defun foo () (add 1 2))"),
+                                                      read("(foo)")
+    ]);
 
-    let module = codegen::compile_form(&ctx, object::LispForm::Integer(300));
+    module.print_to_stderr();
+
     let execution_engine = module.create_jit_execution_engine(OptimizationLevel::None)?;
 
     unsafe {
