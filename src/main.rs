@@ -41,14 +41,17 @@ pub fn read(s: impl Into<String>) -> object::LispForm {
 
 
 fn main() -> Result<(), Box<Error>> {
+    runtime::init();
     let ctx = Context::create();
-    let module = codegen::compile_toplevel(&ctx, vec![read("(defun foo () (add 1 2))"),
+    let mut codegen_ctx = codegen::CodegenContext::new(&ctx);
+
+    codegen::compile_toplevel(&mut codegen_ctx, &vec![read("(defun foo () (add 1 2))"),
                                                       read("(foo)")
     ]);
 
-    module.print_to_stderr();
+    codegen_ctx.module.print_to_stderr();
 
-    let execution_engine = module.create_jit_execution_engine(OptimizationLevel::None)?;
+    let execution_engine = codegen_ctx.module.create_jit_execution_engine(OptimizationLevel::None)?;
 
     unsafe {
         let f: JitFunction<unsafe extern fn() -> runtime::Object> =

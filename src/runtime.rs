@@ -213,11 +213,7 @@ pub fn get_or_intern_symbol(name: *const c_char) -> *mut Symbol {
     )
 }
 
-pub fn init(ctx: &Context, module: &Module) {
-    unsafe {
-        interned_symbols = Some(HashMap::new());
-    }
-
+pub fn gen_runtime_defs(ctx: &Context, module: &Module) {
     Object::gen_llvm_def(ctx);
     List::gen_llvm_def(ctx);
     Symbol::gen_llvm_def(ctx);
@@ -228,6 +224,12 @@ pub fn init(ctx: &Context, module: &Module) {
     unlisp_rt_int_from_obj_gen_def(ctx, module);
     unlisp_rt_set_fn_for_sym_gen_def(ctx, module);
     unlisp_rt_f_ptr_from_sym_gen_def(ctx, module);
+}
+
+pub fn init() {
+    unsafe {
+        interned_symbols = Some(HashMap::new());
+    }
 }
 
 #[no_mangle]
