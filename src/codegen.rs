@@ -71,7 +71,7 @@ impl<'a> CodegenContext<'a> {
             .map(|v| self.llvm_ctx.i8_type().const_int((*v).into(), false))
             .collect();
 
-        let global = self.module.add_global(array_ty, Some(AddressSpace::Const), name.as_str());
+        let global = self.module.add_global(array_ty, None, name.as_str());
         global.set_initializer(&self.llvm_ctx.i8_type().const_array(array_vals.as_slice()));
 
         self.defined_sym_names.insert(name.clone());
@@ -91,6 +91,15 @@ impl<'a> CodegenContext<'a> {
         } else {
             self.define_sym_name(name)
         }
+    }
+
+    pub fn sym_name_as_i8_ptr(&mut self, name: impl Into<String>) -> BasicValueEnum {
+        let global = self.get_or_globalize_sym_name(name);
+        self.builder.build_bitcast(
+            global.as_pointer_value(),
+            self.llvm_ctx.i8_type().ptr_type(AddressSpace::Generic),
+            "sym_name_to_i8_ptr",
+        )
     }
 
     pub fn lookup_known_type(&self, name: &str) -> BasicTypeEnum {
@@ -116,7 +125,7 @@ fn compile_integer(ctx: &mut CodegenContext, i: i64) -> BasicValueEnum {
 
 fn compile_add(
     ctx: &mut CodegenContext,
-    list: &Vec<LispForm>,
+    list: &[LispForm],
 ) -> BasicValueEnum {
     let cast_fn = ctx.lookup_known_fn("unlisp_rt_int_from_obj");
     let compiled_arg1 = compile_form(ctx, &list[1]);
@@ -145,7 +154,7 @@ fn compile_add(
 
 fn codegen_fun(
     ctx: &mut CodegenContext,
-    list: &Vec<LispForm>,
+    list: &[LispForm],
 ) -> FunctionValue {
     let name = object::to_symbol(&list[1]);
     let arglist = object::to_list(&list[2]);
@@ -161,7 +170,7 @@ fn codegen_fun(
 
     ctx.builder.position_at_end(&basic_block);
 
-    let val = compile_form(ctx, &list[3]);
+    let val = compile_forms(ctx, &list[3..]);
 
     ctx.builder.build_return(Some(&val));
 
@@ -174,23 +183,12 @@ fn codegen_fun(
 
 fn compile_defun(
     ctx: &mut CodegenContext,
-    list: &Vec<LispForm>,
+    list: &[LispForm],
 ) -> BasicValueEnum {
     let codegen_fun = codegen_fun(ctx, list);
 
     let name = object::to_symbol(&list[1]);
-    let sym_name_global = ctx.get_or_globalize_sym_name(name.clone());
-
-    let sym_ptr = unsafe {
-        ctx.builder.build_gep(
-            sym_name_global.as_pointer_value(),
-            &[
-                ctx.llvm_ctx.i32_type().const_int(0, false),
-                ctx.llvm_ctx.i32_type().const_int(0, false),
-            ],
-            "gep",
-        )
-    };
+    let sym_ptr = ctx.sym_name_as_i8_ptr(name.clone());
 
     let intern_fn = ctx.lookup_known_fn("unlisp_rt_intern_sym");
     let interned_sym_ptr = ctx.builder.build_call(intern_fn.clone(), &[sym_ptr.into()], "call");
@@ -211,21 +209,10 @@ fn compile_defun(
 
 fn compile_call(
     ctx: &mut CodegenContext,
-    list: &Vec<LispForm>,
+    list: &[LispForm],
 ) -> BasicValueEnum {
     let sym_name = object::to_symbol(&list[0]);
-    let sym_name_global = ctx.get_or_globalize_sym_name(sym_name.clone());
-
-    let sym_name_ptr = unsafe {
-        ctx.builder.build_gep(
-            sym_name_global.as_pointer_value(),
-            &[
-                ctx.llvm_ctx.i32_type().const_int(0, false),
-                ctx.llvm_ctx.i32_type().const_int(0, false),
-            ],
-            "gep",
-        )
-    };
+    let sym_name_ptr = ctx.sym_name_as_i8_ptr(sym_name.clone());
 
     let intern_fn = ctx.lookup_known_fn("unlisp_rt_intern_sym");
     let interned_sym_ptr = ctx.builder.build_call(intern_fn, &[sym_name_ptr.into()], "call");
@@ -255,7 +242,7 @@ fn compile_call(
 
 fn compile_list_form(
     ctx: &mut CodegenContext,
-    list: &Vec<LispForm>,
+    list: &[LispForm],
 ) -> BasicValueEnum {
     let first = &list[0];
 
@@ -274,6 +261,16 @@ fn compile_list_form(
     val
 }
 
+fn compile_forms(ctx: &mut CodegenContext, forms: &[LispForm]) -> BasicValueEnum {
+    let mut val = None;
+
+    for form in forms {
+        val = Some(compile_form(ctx, form));
+    }
+
+    val.unwrap()
+}
+
 pub fn compile_form(
     ctx: &mut CodegenContext,
     obj: &LispForm,
@@ -285,20 +282,16 @@ pub fn compile_form(
     }
 }
 
-pub fn compile_toplevel(ctx: &mut CodegenContext, forms: &Vec<LispForm>) {
+pub fn compile_toplevel(ctx: &mut CodegenContext, forms: &[LispForm]) {
     let obj_struct_ty = ctx.lookup_known_type("unlisp_rt_object");
     let fn_ty = obj_struct_ty.fn_type(&[], false);
     let function = ctx.module.add_function("__repl_form", fn_ty, None);
     let basic_block = ctx.llvm_ctx.append_basic_block(&function, "entry");
     ctx.builder.position_at_end(&basic_block);
 
-    let mut val = None;
+    let val = compile_forms(ctx, forms);
 
-    for form in forms {
-        val = Some(compile_form(ctx, form));
-    }
-
-    ctx.builder.build_return(Some(val.as_ref().unwrap()));
+    ctx.builder.build_return(Some(&val));
 
     function.verify(true);
 }
