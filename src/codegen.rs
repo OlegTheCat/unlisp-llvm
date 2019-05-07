@@ -12,18 +12,22 @@ use std::collections::{HashMap, HashSet};
 use std::iter;
 
 pub struct CodegenContext<'a> {
-    pub counter: i64,
-    pub llvm_ctx: &'a Context,
-    pub module: Module,
-    pub builder: Builder,
-    pub defined_sym_names: HashSet<String>,
-    pub sym_names_globals: HashMap<String, GlobalValue>
+    counter: u64,
+    llvm_ctx: &'a Context,
+    module: Module,
+    builder: Builder,
+    defined_sym_names: HashSet<String>,
+    sym_names_globals: HashMap<String, GlobalValue>
 }
 
 impl<'a> CodegenContext<'a> {
-    pub fn gen_unique_int(&mut self) -> i64 {
+    fn gen_unique_int(&mut self) -> u64 {
         self.counter += 1;
         self.counter
+    }
+
+    fn mangle_str(&mut self, s: impl Into<String>) -> String {
+        format!("{}__unlisp_{}", s.into(), self.gen_unique_int())
     }
 
     pub fn new(llvm_ctx: &'a Context) -> Self {
@@ -80,7 +84,7 @@ impl<'a> CodegenContext<'a> {
         global
     }
 
-    pub fn get_or_globalize_sym_name(&mut self, name: impl Into<String>) -> GlobalValue {
+    fn get_or_globalize_sym_name(&mut self, name: impl Into<String>) -> GlobalValue {
         let name = name.into();
         if self.defined_sym_names.get(&name).is_some() {
             if let Some(g_val) = self.sym_names_globals.get(&name) {
@@ -93,7 +97,7 @@ impl<'a> CodegenContext<'a> {
         }
     }
 
-    pub fn sym_name_as_i8_ptr(&mut self, name: impl Into<String>) -> BasicValueEnum {
+    fn sym_name_as_i8_ptr(&mut self, name: impl Into<String>) -> BasicValueEnum {
         let global = self.get_or_globalize_sym_name(name);
         self.builder.build_bitcast(
             global.as_pointer_value(),
@@ -102,12 +106,33 @@ impl<'a> CodegenContext<'a> {
         )
     }
 
-    pub fn lookup_known_type(&self, name: &str) -> BasicTypeEnum {
+    fn lookup_known_type(&self, name: &str) -> BasicTypeEnum {
         self.module.get_type(name).expect(format!("known type {} not found", name).as_str())
     }
 
-    pub fn lookup_known_fn(&self, name: &str) -> FunctionValue {
+    fn lookup_known_fn(&self, name: &str) -> FunctionValue {
         self.module.get_function(name).expect(format!("known function {} not found", name).as_str())
+    }
+
+    pub fn get_module(&self) -> &Module {
+        &self.module
+    }
+
+    pub fn compile_top_level(&mut self, forms: &[LispForm]) -> String {
+        let obj_struct_ty = self.lookup_known_type("unlisp_rt_object");
+        let fn_ty = obj_struct_ty.fn_type(&[], false);
+        let fn_name = self.mangle_str("__repl_form");
+        let function = self.module.add_function(&fn_name, fn_ty, None);
+        let basic_block = self.llvm_ctx.append_basic_block(&function, "entry");
+        self.builder.position_at_end(&basic_block);
+
+        let val = compile_forms(self, forms);
+
+        self.builder.build_return(Some(&val));
+
+        function.verify(true);
+
+        fn_name
     }
 }
 
@@ -163,7 +188,8 @@ fn codegen_fun(
     let arg_tys: Vec<_> = iter::repeat(obj_struct_ty).take(arglist.len()).collect();
 
     let fn_ty = obj_struct_ty.fn_type(arg_tys.as_slice(), false);
-    let function = ctx.module.add_function(name, fn_ty, None);
+    let fn_name = ctx.mangle_str(name.clone());
+    let function = ctx.module.add_function(&fn_name, fn_ty, None);
     let basic_block = ctx.llvm_ctx.append_basic_block(&function, "entry");
 
     let prev_block = ctx.builder.get_insert_block();
@@ -271,7 +297,7 @@ fn compile_forms(ctx: &mut CodegenContext, forms: &[LispForm]) -> BasicValueEnum
     val.unwrap()
 }
 
-pub fn compile_form(
+fn compile_form(
     ctx: &mut CodegenContext,
     obj: &LispForm,
 ) -> BasicValueEnum {
@@ -280,18 +306,4 @@ pub fn compile_form(
         LispForm::List(list) => compile_list_form(ctx, list),
         _ => panic!("unsuported form"),
     }
-}
-
-pub fn compile_toplevel(ctx: &mut CodegenContext, forms: &[LispForm]) {
-    let obj_struct_ty = ctx.lookup_known_type("unlisp_rt_object");
-    let fn_ty = obj_struct_ty.fn_type(&[], false);
-    let function = ctx.module.add_function("__repl_form", fn_ty, None);
-    let basic_block = ctx.llvm_ctx.append_basic_block(&function, "entry");
-    ctx.builder.position_at_end(&basic_block);
-
-    let val = compile_forms(ctx, forms);
-
-    ctx.builder.build_return(Some(&val));
-
-    function.verify(true);
 }

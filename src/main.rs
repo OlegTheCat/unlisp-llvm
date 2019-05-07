@@ -45,17 +45,17 @@ fn main() -> Result<(), Box<Error>> {
     let ctx = Context::create();
     let mut codegen_ctx = codegen::CodegenContext::new(&ctx);
 
-    codegen::compile_toplevel(&mut codegen_ctx, &vec![read("(defun foo () (add 1 2))"),
+    let fn_name = codegen_ctx.compile_top_level(&vec![read("(defun foo () (add 1 2))"),
                                                       read("(foo)")
     ]);
 
-    codegen_ctx.module.print_to_stderr();
+    codegen_ctx.get_module().print_to_stderr();
 
-    let execution_engine = codegen_ctx.module.create_jit_execution_engine(OptimizationLevel::None)?;
+    let execution_engine = codegen_ctx.get_module().create_jit_execution_engine(OptimizationLevel::None)?;
 
     unsafe {
         let f: JitFunction<unsafe extern fn() -> runtime::Object> =
-            execution_engine.get_function("__repl_form").unwrap();
+            execution_engine.get_function(fn_name.as_str()).unwrap();
         println!("call result: {}", f.call());
     }
 
