@@ -45,8 +45,8 @@ fn main() -> Result<(), Box<Error>> {
     let ctx = Context::create();
     let mut codegen_ctx = codegen::CodegenContext::new(&ctx);
 
-    let fn_name = codegen_ctx.compile_top_level(&vec![read("(defun foo () (add 1 2))"),
-                                                      read("(foo)")
+    let fn_name = codegen_ctx.compile_top_level(&vec![read("(defun foo (a b) (add a b))"),
+                                                      read("(foo 1 2)")
     ]);
 
     codegen_ctx.get_module().print_to_stderr();

@@ -16,8 +16,9 @@ pub struct CodegenContext<'a> {
     llvm_ctx: &'a Context,
     module: Module,
     builder: Builder,
+    envs: Vec<HashMap<String, BasicValueEnum>>,
     defined_sym_names: HashSet<String>,
-    sym_names_globals: HashMap<String, GlobalValue>
+    sym_names_globals: HashMap<String, GlobalValue>,
 }
 
 impl<'a> CodegenContext<'a> {
@@ -41,8 +42,9 @@ impl<'a> CodegenContext<'a> {
             llvm_ctx: llvm_ctx,
             module: module,
             builder: builder,
+            envs: vec![],
             defined_sym_names: HashSet::new(),
-            sym_names_globals: HashMap::new()
+            sym_names_globals: HashMap::new(),
         }
     }
 
@@ -107,11 +109,15 @@ impl<'a> CodegenContext<'a> {
     }
 
     fn lookup_known_type(&self, name: &str) -> BasicTypeEnum {
-        self.module.get_type(name).expect(format!("known type {} not found", name).as_str())
+        self.module
+            .get_type(name)
+            .expect(format!("known type {} not found", name).as_str())
     }
 
     fn lookup_known_fn(&self, name: &str) -> FunctionValue {
-        self.module.get_function(name).expect(format!("known function {} not found", name).as_str())
+        self.module
+            .get_function(name)
+            .expect(format!("known function {} not found", name).as_str())
     }
 
     pub fn get_module(&self) -> &Module {
@@ -134,6 +140,24 @@ impl<'a> CodegenContext<'a> {
 
         fn_name
     }
+
+    fn push_env(&mut self) {
+        self.envs.push(HashMap::new())
+    }
+
+    fn save_env_mapping(&mut self, name: String, val: BasicValueEnum) {
+        let len = self.envs.len();
+        self.envs[len - 1].insert(name, val);
+    }
+
+    fn lookup_in_env(&mut self, name: &String) -> Option<BasicValueEnum> {
+        let len = self.envs.len();
+        self.envs[len - 1].get(name).cloned()
+    }
+
+    fn pop_env(&mut self) {
+        self.envs.pop();
+    }
 }
 
 fn compile_integer(ctx: &mut CodegenContext, i: i64) -> BasicValueEnum {
@@ -148,10 +172,7 @@ fn compile_integer(ctx: &mut CodegenContext, i: i64) -> BasicValueEnum {
     call.try_as_basic_value().left().unwrap()
 }
 
-fn compile_add(
-    ctx: &mut CodegenContext,
-    list: &[LispForm],
-) -> BasicValueEnum {
+fn compile_add(ctx: &mut CodegenContext, list: &[LispForm]) -> BasicValueEnum {
     let cast_fn = ctx.lookup_known_fn("unlisp_rt_int_from_obj");
     let compiled_arg1 = compile_form(ctx, &list[1]);
     let compiled_arg2 = compile_form(ctx, &list[2]);
@@ -177,10 +198,7 @@ fn compile_add(
     sum_packed.try_as_basic_value().left().unwrap()
 }
 
-fn codegen_fun(
-    ctx: &mut CodegenContext,
-    list: &[LispForm],
-) -> FunctionValue {
+fn codegen_fun(ctx: &mut CodegenContext, list: &[LispForm]) -> FunctionValue {
     let name = object::to_symbol(&list[1]);
     let arglist = object::to_list(&list[2]);
     let obj_struct_ty = ctx.lookup_known_type("unlisp_rt_object");
@@ -190,6 +208,15 @@ fn codegen_fun(
     let fn_ty = obj_struct_ty.fn_type(arg_tys.as_slice(), false);
     let fn_name = ctx.mangle_str(name.clone());
     let function = ctx.module.add_function(&fn_name, fn_ty, None);
+
+    ctx.push_env();
+
+    for (arg, arg_name) in function.get_param_iter().zip(arglist.iter()) {
+        let arg_name = object::to_symbol(arg_name);
+        arg.as_struct_value().set_name(arg_name);
+        ctx.save_env_mapping(arg_name.clone(), arg);
+    }
+
     let basic_block = ctx.llvm_ctx.append_basic_block(&function, "entry");
 
     let prev_block = ctx.builder.get_insert_block();
@@ -204,20 +231,21 @@ fn codegen_fun(
 
     prev_block.as_ref().map(|b| ctx.builder.position_at_end(b));
 
+    ctx.pop_env();
+
     function
 }
 
-fn compile_defun(
-    ctx: &mut CodegenContext,
-    list: &[LispForm],
-) -> BasicValueEnum {
+fn compile_defun(ctx: &mut CodegenContext, list: &[LispForm]) -> BasicValueEnum {
     let codegen_fun = codegen_fun(ctx, list);
 
     let name = object::to_symbol(&list[1]);
     let sym_ptr = ctx.sym_name_as_i8_ptr(name.clone());
 
     let intern_fn = ctx.lookup_known_fn("unlisp_rt_intern_sym");
-    let interned_sym_ptr = ctx.builder.build_call(intern_fn.clone(), &[sym_ptr.into()], "call");
+    let interned_sym_ptr = ctx
+        .builder
+        .build_call(intern_fn.clone(), &[sym_ptr.into()], "call");
     let interned_sym_ptr = interned_sym_ptr.try_as_basic_value().left().unwrap();
 
     let fun_ptr = codegen_fun.as_global_value().as_pointer_value();
@@ -233,17 +261,17 @@ fn compile_defun(
     res.try_as_basic_value().left().unwrap()
 }
 
-fn compile_call(
-    ctx: &mut CodegenContext,
-    list: &[LispForm],
-) -> BasicValueEnum {
+fn compile_call(ctx: &mut CodegenContext, list: &[LispForm]) -> BasicValueEnum {
     let sym_name = object::to_symbol(&list[0]);
     let sym_name_ptr = ctx.sym_name_as_i8_ptr(sym_name.clone());
 
     let intern_fn = ctx.lookup_known_fn("unlisp_rt_intern_sym");
-    let interned_sym_ptr = ctx.builder.build_call(intern_fn, &[sym_name_ptr.into()], "call");
+    let interned_sym_ptr = ctx
+        .builder
+        .build_call(intern_fn, &[sym_name_ptr.into()], "call");
 
-    let f_ptr = ctx.builder
+    let f_ptr = ctx
+        .builder
         .build_call(
             ctx.lookup_known_fn("unlisp_rt_f_ptr_from_sym"),
             &[interned_sym_ptr.try_as_basic_value().left().unwrap()],
@@ -259,25 +287,23 @@ fn compile_call(
 
     let f_ptr = ctx.builder.build_bitcast(f_ptr, fn_ty, "f_ptr_cast");
 
+    let args = &list[1..];
+    let compiled_args: Vec<_> = args.iter().map(|f| compile_form(ctx, f)).collect();
+
     ctx.builder
-        .build_call(f_ptr.into_pointer_value(), &[], "f_ptr_call")
+        .build_call(f_ptr.into_pointer_value(), compiled_args.as_slice(), "f_ptr_call")
         .try_as_basic_value()
         .left()
         .unwrap()
 }
 
-fn compile_list_form(
-    ctx: &mut CodegenContext,
-    list: &[LispForm],
-) -> BasicValueEnum {
+fn compile_list_form(ctx: &mut CodegenContext, list: &[LispForm]) -> BasicValueEnum {
     let first = &list[0];
 
     let val = match first {
         LispForm::Symbol(s) if *s == "add".to_string() => compile_add(ctx, list),
 
-        LispForm::Symbol(s) if *s == "defun".to_string() => {
-            compile_defun(ctx, list)
-        }
+        LispForm::Symbol(s) if *s == "defun".to_string() => compile_defun(ctx, list),
 
         LispForm::Symbol(_) => compile_call(ctx, list),
 
@@ -297,13 +323,13 @@ fn compile_forms(ctx: &mut CodegenContext, forms: &[LispForm]) -> BasicValueEnum
     val.unwrap()
 }
 
-fn compile_form(
-    ctx: &mut CodegenContext,
-    obj: &LispForm,
-) -> BasicValueEnum {
+fn compile_form(ctx: &mut CodegenContext, obj: &LispForm) -> BasicValueEnum {
     match obj {
         LispForm::Integer(i) => compile_integer(ctx, *i),
         LispForm::List(list) => compile_list_form(ctx, list),
+        LispForm::Symbol(s) => ctx
+            .lookup_in_env(s)
+            .expect(format!("undefined symbol {}", s).as_str()),
         _ => panic!("unsuported form"),
     }
 }
