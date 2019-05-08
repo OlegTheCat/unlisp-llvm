@@ -25,6 +25,7 @@ mod pushback_reader;
 mod reader;
 mod runtime;
 mod codegen;
+mod repr;
 
 /// Convenience type alias for the `sum` function.
 ///

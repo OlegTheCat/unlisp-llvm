@@ -213,7 +213,7 @@ pub fn get_or_intern_symbol(name: *const c_char) -> *mut Symbol {
     )
 }
 
-pub fn gen_runtime_defs(ctx: &Context, module: &Module) {
+pub fn gen_defs(ctx: &Context, module: &Module) {
     Object::gen_llvm_def(ctx);
     List::gen_llvm_def(ctx);
     Symbol::gen_llvm_def(ctx);

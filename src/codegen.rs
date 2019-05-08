@@ -35,7 +35,7 @@ impl<'a> CodegenContext<'a> {
         let module = llvm_ctx.create_module("mod_0");
         let builder = llvm_ctx.create_builder();
 
-        runtime::gen_runtime_defs(llvm_ctx, &module);
+        runtime::gen_defs(llvm_ctx, &module);
 
         Self {
             counter: 0,
@@ -53,7 +53,7 @@ impl<'a> CodegenContext<'a> {
             .llvm_ctx
             .create_module(format!("mod_{}", self.gen_unique_int()).as_str());
 
-        runtime::gen_runtime_defs(self.llvm_ctx, &module);
+        runtime::gen_defs(self.llvm_ctx, &module);
 
         self.module = module;
         self.sym_names_globals = HashMap::new();
