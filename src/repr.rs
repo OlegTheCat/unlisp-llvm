@@ -34,40 +34,40 @@ pub struct LetBlock {
 
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub struct Lambda {
-    name: Option<String>,
-    arglist: Vec<String>,
-    body: Vec<HIR>,
+    pub name: Option<String>,
+    pub arglist: Vec<String>,
+    pub body: Vec<HIR>,
 }
 
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub struct Quote {
-    body: Box<HIR>,
+    pub body: Box<HIR>,
 }
 
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub struct If {
-    cond: Box<HIR>,
-    then_hir: Box<HIR>,
-    else_hir: Option<Box<HIR>>,
+    pub cond: Box<HIR>,
+    pub then_hir: Box<HIR>,
+    pub else_hir: Option<Box<HIR>>,
 }
 
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub struct Defun {
-    name: String,
-    args: Vec<String>,
-    body: Vec<HIR>,
+    pub name: String,
+    pub args: Vec<String>,
+    pub body: Vec<HIR>,
 }
 
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub struct Closure {
-    captured: Vec<String>,
-    lambda: Lambda,
+    pub captured: Vec<String>,
+    pub lambda: Lambda,
 }
 
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub struct Call {
-    fn_name: String,
-    args: Vec<HIR>,
+    pub fn_name: String,
+    pub args: Vec<HIR>,
 }
 
 #[derive(Debug, PartialEq, Eq, Clone)]
@@ -84,7 +84,6 @@ pub enum HIR {
     Literal(Literal),
     Lambda(Lambda),
     Closure(Closure),
-    Defun(Defun),
     Call(Call),
     LetBlock(LetBlock),
     Quote(Quote),

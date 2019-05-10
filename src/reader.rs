@@ -2,7 +2,7 @@ use crate::cons::List;
 use crate::error::SyntaxError;
 use crate::lexer::Lexer;
 use crate::lexer::Token;
-use crate::object::LispForm;
+use crate::repr::Form;
 use std::error::Error;
 use std::io::Read;
 use std::io;
@@ -23,18 +23,18 @@ impl<'a, T: Read + 'a> Reader<'a, T> {
         tok.ok_or(Box::new(io::Error::from(io::ErrorKind::UnexpectedEof)))
     }
 
-    fn tok_to_trivial_form(&self, tok: &Token) -> Option<LispForm> {
+    fn tok_to_trivial_form(&self, tok: &Token) -> Option<Form> {
         match tok {
-            Token::Symbol(s) if s == "nil" => Some(LispForm::List(vec![])),
-            Token::Symbol(s) if s == "t" => Some(LispForm::T),
-            Token::Symbol(s) => Some(LispForm::Symbol(s.clone())),
-            Token::IntegerLiteral(i) => Some(LispForm::Integer(*i)),
-            Token::StringLiteral(s) => Some(LispForm::String(s.to_string())),
+            Token::Symbol(s) if s == "nil" => Some(Form::List(vec![])),
+            Token::Symbol(s) if s == "t" => Some(Form::T),
+            Token::Symbol(s) => Some(Form::Symbol(s.clone())),
+            Token::IntegerLiteral(i) => Some(Form::Integer(*i)),
+            Token::StringLiteral(s) => Some(Form::String(s.to_string())),
             _ => None,
         }
     }
 
-    fn read_list_form(&mut self) -> Result<LispForm, Box<Error>> {
+    fn read_list_form(&mut self) -> Result<Form, Box<Error>> {
         let mut vec = Vec::new();
 
         let mut tok = self.next_tok_or_eof()?;
@@ -56,10 +56,10 @@ impl<'a, T: Read + 'a> Reader<'a, T> {
             tok = self.next_tok_or_eof()?;
         }
 
-        Ok(LispForm::List(vec))
+        Ok(Form::List(vec))
     }
 
-    pub fn read_form(&mut self) -> Result<Option<LispForm>, Box<Error>> {
+    pub fn read_form(&mut self) -> Result<Option<Form>, Box<Error>> {
         let tok = self.lexer.next_token()?;
 
         if tok.is_none() {

@@ -33,29 +33,30 @@ mod repr;
 /// do `unsafe` operations internally.
 type SumFunc = unsafe extern "C" fn(u64, u64, u64) -> u64;
 
-pub fn read(s: impl Into<String>) -> object::LispForm {
+pub fn read(s: impl Into<String>) -> repr::Form {
     let s = s.into();
     let mut bytes = s.as_bytes();
     let mut reader = reader::Reader::create(&mut bytes);
     reader.read_form().unwrap().unwrap()
 }
 
-
 fn main() -> Result<(), Box<Error>> {
-    runtime::init();
+    runtime::symbols::init();
+    runtime::predefined::init();
+
     let ctx = Context::create();
     let mut codegen_ctx = codegen::CodegenContext::new(&ctx);
 
-    let fn_name = codegen_ctx.compile_top_level(&vec![read("(defun foo (a b) (add a b))"),
-                                                      read("(foo 1 2)")
-    ]);
+    let fn_name = codegen_ctx.compile_top_level(&vec![read("(+ 1 2)"),
+                                                      // read("(foo 1 2)")
+    ]).unwrap();
 
     codegen_ctx.get_module().print_to_stderr();
 
     let execution_engine = codegen_ctx.get_module().create_jit_execution_engine(OptimizationLevel::None)?;
 
     unsafe {
-        let f: JitFunction<unsafe extern fn() -> runtime::Object> =
+        let f: JitFunction<unsafe extern fn() -> runtime::defs::Object> =
             execution_engine.get_function(fn_name.as_str()).unwrap();
         println!("call result: {}", f.call());
     }
