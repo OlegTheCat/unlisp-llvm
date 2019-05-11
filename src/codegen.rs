@@ -206,32 +206,6 @@ fn compile_integer(ctx: &mut CodegenContext, i: i64) -> BasicValueEnum {
     call.try_as_basic_value().left().unwrap()
 }
 
-// fn compile_add(ctx: &mut CodegenContext, list: &[LispForm]) -> BasicValueEnum {
-//     let cast_fn = ctx.lookup_known_fn("unlisp_rt_int_from_obj");
-//     let compiled_arg1 = compile_form(ctx, &list[1]);
-//     let compiled_arg2 = compile_form(ctx, &list[2]);
-
-//     let cast_arg1 = ctx.builder.build_call(cast_fn, &[compiled_arg1], "cast1");
-//     let cast_arg1 = cast_arg1.try_as_basic_value().left().unwrap();
-
-//     let cast_arg2 = ctx.builder.build_call(cast_fn, &[compiled_arg2], "cast2");
-//     let cast_arg2 = cast_arg2.try_as_basic_value().left().unwrap();
-
-//     let sum = ctx.builder.build_int_add(
-//         cast_arg1.into_int_value(),
-//         cast_arg2.into_int_value(),
-//         "add",
-//     );
-
-//     let sum_packed = ctx.builder.build_call(
-//         ctx.lookup_known_fn("unlisp_rt_object_from_int"),
-//         &[sum.into()],
-//         "pack",
-//     );
-
-//     sum_packed.try_as_basic_value().left().unwrap()
-// }
-
 // fn codegen_fun(ctx: &mut CodegenContext, list: &[LispForm]) -> FunctionValue {
 //     let name = object::to_symbol(&list[1]);
 //     let arglist = object::to_list(&list[2]);
@@ -319,8 +293,6 @@ fn compile_call(ctx: &mut CodegenContext, call: &Call) -> CompileResult {
 
     let invoke_ptr_ptr = unsafe { ctx.builder.build_struct_gep(function_ptr, 5, "invoke_gep") };
 
-    ctx.module.print_to_stderr();
-
     let invoke_ptr = ctx
         .builder
         .build_load(invoke_ptr_ptr, "invoke_ptr")
@@ -343,11 +315,14 @@ fn compile_call(ctx: &mut CodegenContext, call: &Call) -> CompileResult {
         .builder
         .build_bitcast(invoke_ptr, invoke_fn_ptr_ty, "fn_ptr_cast");
 
-    let compiled_args = call
+    let mut compiled_args = call
         .args
         .iter()
         .map(|arg| compile_hir(ctx, arg))
         .collect::<Result<Vec<_>, _>>()?;
+
+    compiled_args.push(function_ptr.into());
+    compiled_args.reverse();
 
     Ok(ctx
         .builder
@@ -360,22 +335,6 @@ fn compile_call(ctx: &mut CodegenContext, call: &Call) -> CompileResult {
         .left()
         .unwrap())
 }
-
-// fn compile_list_form(ctx: &mut CodegenContext, list: &[LispForm]) -> BasicValueEnum {
-//     let first = &list[0];
-
-//     let val = match first {
-//         LispForm::Symbol(s) if *s == "add".to_string() => compile_add(ctx, list),
-
-//         LispForm::Symbol(s) if *s == "defun".to_string() => compile_defun(ctx, list),
-
-//         LispForm::Symbol(_) => compile_call(ctx, list),
-
-//         _ => panic!("unsupported form: {:?}", &list),
-//     };
-
-//     val
-// }
 
 fn compile_literal(ctx: &mut CodegenContext, literal: &Literal) -> CompileResult {
     match literal {

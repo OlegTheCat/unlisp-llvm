@@ -15,7 +15,7 @@ fn arr_to_raw(arr: &[&str]) -> *const *const c_char {
     ptr as *const *const c_char
 }
 
-extern fn native_add(x: Object, y: Object) -> Object {
+extern fn native_add(_: *const Function, x: Object, y: Object) -> Object {
     let x_int = x.unpack_int();
     let y_int = y.unpack_int();
 
@@ -23,7 +23,7 @@ extern fn native_add(x: Object, y: Object) -> Object {
 }
 
 #[used]
-static NATIVE_ADD: extern fn(Object, Object) -> Object = native_add;
+static NATIVE_ADD: extern fn(*const Function, Object, Object) -> Object = native_add;
 
 fn init_native_add() {
     let sym = symbols::get_or_intern_symbol("+".to_string());
@@ -45,7 +45,7 @@ fn init_native_add() {
     unsafe { (*sym).function = func };
 }
 
-extern fn native_set_fn(sym: Object, func: Object) -> Object {
+extern fn native_set_fn(_: *const Function, sym: Object, func: Object) -> Object {
     let sym = sym.unpack_symbol();
     let func = func.unpack_function();
 
@@ -55,7 +55,7 @@ extern fn native_set_fn(sym: Object, func: Object) -> Object {
 }
 
 #[used]
-static NATIVE_SET_FN: extern fn(Object, Object) -> Object = native_set_fn;
+static NATIVE_SET_FN: extern fn(*const Function, Object, Object) -> Object = native_set_fn;
 
 fn init_native_set_fn() {
     let sym = symbols::get_or_intern_symbol("set-fn".to_string());
