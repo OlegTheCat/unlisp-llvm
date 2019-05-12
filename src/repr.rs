@@ -1,5 +1,8 @@
+use std::collections::HashSet;
 use std::error::Error;
 use std::fmt;
+use std::iter::FromIterator;
+use std::ops::Deref;
 
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub enum Form {
@@ -52,15 +55,8 @@ pub struct If {
 }
 
 #[derive(Debug, PartialEq, Eq, Clone)]
-pub struct Defun {
-    pub name: String,
-    pub args: Vec<String>,
-    pub body: Vec<HIR>,
-}
-
-#[derive(Debug, PartialEq, Eq, Clone)]
 pub struct Closure {
-    pub captured: Vec<String>,
+    pub free_vars: Vec<String>,
     pub lambda: Lambda,
 }
 
@@ -127,6 +123,8 @@ fn forms_to_hir(forms: &Vec<Form>) -> Result<HIR, SyntaxError> {
             Form::T | Form::Integer(_) | Form::String(_) | Form::List(_) => {
                 Err(SyntaxError::new("illegal function call"))
             }
+
+            Form::Symbol(s) if is(s, "quote") => unimplemented!(),
 
             Form::Symbol(s) if is(s, "if") => {
                 let cond = forms
@@ -256,13 +254,15 @@ fn forms_to_hir(forms: &Vec<Form>) -> Result<HIR, SyntaxError> {
 }
 
 pub fn form_to_hir(form: &Form) -> Result<HIR, SyntaxError> {
-    match form {
+    let hir = match form {
         Form::T => Ok(HIR::Literal(Literal::T)),
         Form::Symbol(s) => Ok(HIR::Literal(Literal::SymbolLiteral(s.to_owned()))),
         Form::Integer(i) => Ok(HIR::Literal(Literal::IntegerLiteral(*i))),
         Form::String(s) => Ok(HIR::Literal(Literal::StringLiteral(s.to_owned()))),
         Form::List(list) => forms_to_hir(list),
-    }
+    };
+
+    Ok(convert_into_closures(&hir?))
 }
 
 fn literal_to_form(literal: &Literal) -> Form {
@@ -271,7 +271,7 @@ fn literal_to_form(literal: &Literal) -> Form {
         Literal::SymbolLiteral(s) => Form::Symbol(s.clone()),
         Literal::IntegerLiteral(i) => Form::Integer(*i),
         Literal::StringLiteral(s) => Form::String(s.clone()),
-        Literal::ListLiteral(list) => Form::List(list.iter().map(literal_to_form).collect())
+        Literal::ListLiteral(list) => Form::List(list.iter().map(literal_to_form).collect()),
     }
 }
 
@@ -279,6 +279,162 @@ pub fn hir_to_form(hir: &HIR) -> Form {
     match hir {
         HIR::Literal(lit) => literal_to_form(lit),
         HIR::Call(call) => unimplemented!(),
-        _ => unimplemented!()
+        _ => unimplemented!(),
+    }
+}
+
+fn convert_lambda_body_item(
+    bound_vars: &mut Vec<HashSet<String>>,
+    free_vars: &mut HashSet<String>,
+    body_item: &HIR,
+) -> HIR {
+    let is_bound = |s| {
+        for frame in bound_vars.iter().rev() {
+            if frame.get(s).is_some() {
+                return true;
+            }
+        }
+
+        false
+    };
+
+    match body_item {
+        HIR::Literal(Literal::SymbolLiteral(s)) => {
+            if !is_bound(s) {
+                free_vars.insert(s.clone());
+            }
+
+            HIR::Literal(Literal::SymbolLiteral(s.clone()))
+        }
+        HIR::Literal(literal) => HIR::Literal(literal.clone()),
+        HIR::Lambda(lambda) => {
+            let closure = convert_lambda(lambda);
+
+            for var in closure.free_vars.iter() {
+                if !is_bound(var) {
+                    free_vars.insert(var.clone());
+                }
+            }
+
+            HIR::Closure(closure)
+        },
+        HIR::Closure(_) => panic!("unexpected closure"),
+        HIR::Call(call) => {
+            let call = Call {
+                fn_name: call.fn_name.clone(),
+                args: call
+                    .args
+                    .iter()
+                    .map(|hir| convert_lambda_body_item(bound_vars, free_vars, hir))
+                    .collect(),
+            };
+
+            HIR::Call(call)
+        }
+        HIR::LetBlock(let_block) => {
+            let mut new_bindings = vec![];
+
+            for (name, val) in let_block.bindings.iter() {
+                let new_val = convert_lambda_body_item(bound_vars, free_vars, val);
+
+                let mut frame = HashSet::new();
+                frame.insert(name.clone());
+
+                bound_vars.push(frame);
+                new_bindings.push((name.clone(), new_val));
+            }
+
+            let new_body = let_block
+                .body
+                .iter()
+                .map(|hir| convert_lambda_body_item(bound_vars, free_vars, hir))
+                .collect();
+
+            for _ in let_block.bindings.iter() {
+                bound_vars.pop();
+            }
+
+            let new_let_block = LetBlock {
+                bindings: new_bindings,
+                body: new_body,
+            };
+
+            HIR::LetBlock(new_let_block)
+        }
+        HIR::Quote(quote) => HIR::Quote(quote.clone()),
+        HIR::If(if_hir) => {
+            let converted = If {
+                cond: Box::new(convert_lambda_body_item(bound_vars, free_vars, if_hir.cond.deref())),
+                then_hir: Box::new(convert_lambda_body_item(bound_vars, free_vars, if_hir.then_hir.deref())),
+                else_hir: if_hir
+                    .else_hir
+                    .as_ref()
+                    .map(|box_hir| Box::new(convert_lambda_body_item(bound_vars, free_vars, box_hir.deref()))),
+            };
+
+            HIR::If(converted)
+        },
+    }
+}
+
+fn convert_lambda(lambda: &Lambda) -> Closure {
+    let lambda_frame = lambda.arglist.iter().map(|n| n.clone()).collect();
+    let mut bound_vars = vec![lambda_frame];
+    let mut free_vars = HashSet::new();
+
+    let body = lambda
+        .body
+        .iter()
+        .map(|item| convert_lambda_body_item(&mut bound_vars, &mut free_vars, item))
+        .collect();
+
+    Closure {
+        free_vars: Vec::from_iter(free_vars),
+        lambda: Lambda {
+            name: lambda.name.clone(),
+            arglist: lambda.arglist.clone(),
+            body: body,
+        },
+    }
+}
+
+pub fn convert_into_closures(hir: &HIR) -> HIR {
+    match hir {
+        HIR::Literal(literal) => HIR::Literal(literal.clone()),
+        HIR::Lambda(lambda) => HIR::Closure(convert_lambda(lambda)),
+        HIR::Closure(_) => panic!("unexpected closure"),
+        HIR::Call(call) => {
+            let converted = Call {
+                fn_name: call.fn_name.clone(),
+                args: call.args.iter().map(convert_into_closures).collect(),
+            };
+
+            HIR::Call(converted)
+        }
+        HIR::LetBlock(let_block) => {
+            let converted = LetBlock {
+                bindings: let_block
+                    .bindings
+                    .iter()
+                    .map(|(s, hir)| (s.clone(), convert_into_closures(hir)))
+                    .collect(),
+                body: let_block.body.iter().map(convert_into_closures).collect(),
+            };
+
+            HIR::LetBlock(converted)
+        }
+        HIR::Quote(quote) => HIR::Quote(quote.clone()),
+        HIR::If(if_hir) => {
+            let converted = If {
+                cond: Box::new(convert_into_closures(if_hir.cond.deref())),
+                then_hir: Box::new(convert_into_closures(if_hir.then_hir.deref())),
+                else_hir: if_hir
+                    .else_hir
+                    .as_ref()
+                    .map(|box_hir| Box::new(convert_into_closures(box_hir.deref()))),
+            };
+
+            HIR::If(converted)
+        }
     }
 }
