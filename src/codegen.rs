@@ -1,10 +1,11 @@
 use crate::repr::*;
 use crate::runtime;
 
+use inkwell::basic_block::BasicBlock;
 use inkwell::builder::Builder;
 use inkwell::context::Context;
 use inkwell::module::Module;
-use inkwell::types::{BasicType, BasicTypeEnum};
+use inkwell::types::{BasicType, BasicTypeEnum, StructType};
 use inkwell::values::{BasicValueEnum, FunctionValue, GlobalValue};
 use inkwell::AddressSpace;
 use std::collections::{HashMap, HashSet};
@@ -12,6 +13,7 @@ use std::collections::{HashMap, HashSet};
 use std::error::Error;
 use std::fmt;
 use std::iter;
+use std::rc::Rc;
 
 type GenResult<T> = Result<T, Box<Error>>;
 type CompileResult = GenResult<BasicValueEnum>;
@@ -42,6 +44,7 @@ pub struct CodegenContext<'a> {
     llvm_ctx: &'a Context,
     module: Module,
     builder: Builder,
+    blocks_stack: Vec<Rc<BasicBlock>>,
     envs: Vec<HashMap<String, BasicValueEnum>>,
     defined_sym_names: HashSet<String>,
     sym_names_globals: HashMap<String, GlobalValue>,
@@ -68,6 +71,7 @@ impl<'a> CodegenContext<'a> {
             llvm_ctx: llvm_ctx,
             module: module,
             builder: builder,
+            blocks_stack: vec![],
             envs: vec![],
             defined_sym_names: HashSet::new(),
             sym_names_globals: HashMap::new(),
@@ -81,6 +85,7 @@ impl<'a> CodegenContext<'a> {
 
         runtime::defs::gen_defs(self.llvm_ctx, &module);
 
+        self.blocks_stack = vec![];
         self.module = module;
         self.sym_names_globals = HashMap::new();
     }
@@ -125,7 +130,7 @@ impl<'a> CodegenContext<'a> {
         }
     }
 
-    fn sym_name_as_i8_ptr(&mut self, name: impl Into<String>) -> BasicValueEnum {
+    fn name_as_i8_ptr(&mut self, name: impl Into<String>) -> BasicValueEnum {
         let global = self.get_or_globalize_sym_name(name);
         self.builder.build_bitcast(
             global.as_pointer_value(),
@@ -155,8 +160,8 @@ impl<'a> CodegenContext<'a> {
         let fn_ty = obj_struct_ty.fn_type(&[], false);
         let fn_name = self.mangle_str("__repl_form");
         let function = self.module.add_function(&fn_name, fn_ty, None);
-        let basic_block = self.llvm_ctx.append_basic_block(&function, "entry");
-        self.builder.position_at_end(&basic_block);
+
+        self.enter_block(&function);
 
         let val = compile_hirs(self, hirs)?;
 
@@ -184,13 +189,32 @@ impl<'a> CodegenContext<'a> {
         self.envs[len - 1].insert(name, val);
     }
 
-    fn lookup_in_env(&mut self, name: &String) -> Option<BasicValueEnum> {
-        let len = self.envs.len();
-        self.envs[len - 1].get(name).cloned()
+    fn lookup_name(&self, name: &String) -> Option<BasicValueEnum> {
+        for env in self.envs.iter().rev() {
+            if let Some(val) = env.get(name) {
+                return Some(val.clone());
+            }
+        }
+
+        None
     }
 
     fn pop_env(&mut self) {
         self.envs.pop();
+    }
+
+    fn enter_block(&mut self, function: &FunctionValue) {
+        let block = self.llvm_ctx.append_basic_block(&function, "entry");
+        let block_rc = Rc::new(block);
+
+        self.builder.position_at_end(&block_rc);
+        self.blocks_stack.push(block_rc);
+    }
+
+    fn exit_block(&mut self) {
+        self.blocks_stack.pop();
+        self.builder
+            .position_at_end(&self.blocks_stack[self.blocks_stack.len() - 1]);
     }
 }
 
@@ -248,7 +272,7 @@ fn compile_integer(ctx: &mut CodegenContext, i: i64) -> BasicValueEnum {
 //     let codegen_fun = codegen_fun(ctx, list);
 
 //     let name = object::to_symbol(&list[1]);
-//     let sym_ptr = ctx.sym_name_as_i8_ptr(name.clone());
+//     let sym_ptr = ctx.name_as_i8_ptr(name.clone());
 
 //     let intern_fn = ctx.lookup_known_fn("unlisp_rt_intern_sym");
 //     let interned_sym_ptr = ctx
@@ -270,7 +294,7 @@ fn compile_integer(ctx: &mut CodegenContext, i: i64) -> BasicValueEnum {
 // }
 
 fn compile_call(ctx: &mut CodegenContext, call: &Call) -> CompileResult {
-    let sym_name_ptr = ctx.sym_name_as_i8_ptr(call.fn_name.as_str());
+    let sym_name_ptr = ctx.name_as_i8_ptr(call.fn_name.as_str());
 
     let intern_fn = ctx.lookup_known_fn("unlisp_rt_intern_sym");
     let interned_sym_ptr = ctx
@@ -336,12 +360,246 @@ fn compile_call(ctx: &mut CodegenContext, call: &Call) -> CompileResult {
         .unwrap())
 }
 
+fn codegen_raw_fn(ctx: &mut CodegenContext, closure: &Closure) -> GenResult<FunctionValue> {
+    let fn_name = closure
+        .lambda
+        .name
+        .as_ref()
+        .map_or("lambda", |n| n.as_str());
+    let fn_name = ctx.mangle_str(fn_name);
+
+    let pars_count = closure.free_vars.len() + closure.lambda.arglist.len();
+    let obj_struct_ty = ctx.lookup_known_type("unlisp_rt_object");
+
+    let arg_tys: Vec<_> = iter::repeat(obj_struct_ty).take(pars_count).collect();
+
+    let fn_ty = obj_struct_ty.fn_type(arg_tys.as_slice(), false);
+    let function = ctx.module.add_function(&fn_name, fn_ty, None);
+
+    ctx.push_env();
+    ctx.enter_block(&function);
+
+    let args_iter = closure
+        .free_vars
+        .iter()
+        .chain(closure.lambda.arglist.iter());
+
+    for (arg, arg_name) in function.get_param_iter().zip(args_iter) {
+        arg.as_struct_value().set_name(arg_name);
+        ctx.save_env_mapping(arg_name.clone(), arg);
+    }
+
+    let val = compile_hirs(ctx, closure.lambda.body.as_slice())?;
+
+    ctx.builder.build_return(Some(&val));
+
+    function.verify(true);
+
+    ctx.exit_block();
+    ctx.pop_env();
+
+    Ok(function)
+}
+
+fn codegen_closure_struct(ctx: &mut CodegenContext, closure: &Closure) -> StructType {
+    let struct_name = closure.lambda.name.as_ref().map_or_else(
+        || "closure_struct".to_string(),
+        |n| format!("{}_closure_struct", n),
+    );
+
+    let struct_name = ctx.mangle_str(struct_name);
+
+    let struct_ty = ctx.llvm_ctx.opaque_struct_type(struct_name.as_str());
+
+    let ty_ty = ctx.llvm_ctx.i32_type();
+    let ty_name = ctx.llvm_ctx.i8_type().ptr_type(AddressSpace::Generic);
+    let ty_arglist = ctx
+        .llvm_ctx
+        .i8_type()
+        .ptr_type(AddressSpace::Generic)
+        .ptr_type(AddressSpace::Generic);
+    let ty_arg_count = ctx.llvm_ctx.i64_type();
+    let ty_is_macro = ctx.llvm_ctx.bool_type();
+    let ty_invoke_f_ptr = ctx.llvm_ctx.i8_type().ptr_type(AddressSpace::Generic);
+    let ty_apply_to_f_ptr = ctx.llvm_ctx.i8_type().ptr_type(AddressSpace::Generic);
+
+    let mut body_tys = vec![
+        ty_ty.into(),
+        ty_name.into(),
+        ty_arglist.into(),
+        ty_arg_count.into(),
+        ty_is_macro.into(),
+        ty_invoke_f_ptr.into(),
+        ty_apply_to_f_ptr.into(),
+    ];
+
+    let object_ty = ctx.lookup_known_type("unlisp_rt_object");
+
+    for _ in closure.free_vars.iter() {
+        body_tys.push(object_ty.clone().into());
+    }
+
+    struct_ty.set_body(body_tys.as_slice(), false);
+
+    struct_ty
+}
+
+fn codegen_invoke_fn(
+    ctx: &mut CodegenContext,
+    closure: &Closure,
+    struct_ty: StructType,
+    raw_fn: FunctionValue,
+) -> FunctionValue {
+    let fn_name = closure
+        .lambda
+        .name
+        .as_ref()
+        .map_or_else(|| "invoke_closure".to_string(), |n| format!("invoke_{}", n));
+
+    let fn_name = ctx.mangle_str(fn_name);
+
+    let obj_struct_ty = ctx.lookup_known_type("unlisp_rt_object");
+
+    let mut arg_tys: Vec<_> = iter::repeat(obj_struct_ty)
+        .take(closure.lambda.arglist.len())
+        .collect();
+    arg_tys.push(struct_ty.ptr_type(AddressSpace::Generic).into());
+    arg_tys.reverse();
+
+    let fn_ty = obj_struct_ty.fn_type(arg_tys.as_slice(), false);
+    let function = ctx.module.add_function(&fn_name, fn_ty, None);
+
+    ctx.enter_block(&function);
+
+    let mut par_iter = function.get_param_iter();
+    let struct_ptr_par = par_iter.next().unwrap().into_pointer_value();
+
+    let mut raw_fn_args = vec![];
+
+    for (i, _) in closure.free_vars.iter().enumerate() {
+        let arg_ptr = unsafe {
+            ctx.builder
+                .build_struct_gep(struct_ptr_par, 6 + i as u32, "free_var_ptr")
+        };
+        let arg = ctx.builder.build_load(arg_ptr, "free_var");
+        raw_fn_args.push(arg);
+    }
+
+    raw_fn_args.extend(par_iter);
+
+    let raw_call = ctx
+        .builder
+        .build_call(raw_fn, raw_fn_args.as_slice(), "raw_fn_call")
+        .try_as_basic_value()
+        .left()
+        .unwrap();
+
+    ctx.builder.build_return(Some(&raw_call));
+
+    function.verify(true);
+
+    ctx.exit_block();
+
+    function
+}
+
+fn compile_closure(ctx: &mut CodegenContext, closure: &Closure) -> CompileResult {
+    let raw_fn = codegen_raw_fn(ctx, closure)?;
+    let struct_ty = codegen_closure_struct(ctx, closure);
+    let invoke_fn = codegen_invoke_fn(ctx, closure, struct_ty, raw_fn);
+
+    let struct_ptr_ty = struct_ty.ptr_type(AddressSpace::Generic);
+    let struct_ptr_null = struct_ptr_ty.const_null();
+
+    let size = unsafe {
+        ctx.builder.build_gep(
+            struct_ptr_null,
+            &[ctx.llvm_ctx.i32_type().const_int(1, false)],
+            "size",
+        )
+    };
+
+    let size = ctx
+        .builder
+        .build_ptr_to_int(size, ctx.llvm_ctx.i32_type(), "size_i32");
+
+    let malloc = ctx.lookup_known_fn("malloc");
+    let struct_ptr = ctx
+        .builder
+        .build_call(malloc, &[size.into()], "malloc")
+        .try_as_basic_value()
+        .left()
+        .unwrap()
+        .into_pointer_value();
+    let struct_ptr = ctx
+        .builder
+        .build_bitcast(struct_ptr, struct_ptr_ty, "closure_ptr")
+        .into_pointer_value();
+
+    let struct_ty_ptr = unsafe { ctx.builder.build_struct_gep(struct_ptr, 0, "ty_ptr") };
+
+    ctx.builder
+        .build_store(struct_ty_ptr, ctx.llvm_ctx.i32_type().const_int(1, false));
+
+    let name = closure
+        .lambda
+        .name
+        .as_ref()
+        .map_or("lambda", |n| n.as_str());
+    let name_ptr = ctx.name_as_i8_ptr(name);
+
+    let struct_name_ptr = unsafe { ctx.builder.build_struct_gep(struct_ptr, 1, "name_ptr") };
+    ctx.builder.build_store(struct_name_ptr, name_ptr);
+
+    //TODO: arglist
+
+    let struct_arg_count_ptr =
+        unsafe { ctx.builder.build_struct_gep(struct_ptr, 3, "arg_count_ptr") };
+    ctx.builder.build_store(
+        struct_arg_count_ptr,
+        ctx.llvm_ctx
+            .i64_type()
+            .const_int(closure.lambda.arglist.len() as u64, false),
+    );
+
+    let struct_is_macro_ptr =
+        unsafe { ctx.builder.build_struct_gep(struct_ptr, 4, "is_macro_ptr") };
+    ctx.builder.build_store(
+        struct_is_macro_ptr,
+        ctx.llvm_ctx.bool_type().const_int(0, false),
+    );
+
+    let struct_invoke_fn_ptr = unsafe { ctx.builder.build_struct_gep(struct_ptr, 5, "invoke_ptr") };
+
+    let invoke_fn_cast = ctx.builder.build_bitcast(
+        invoke_fn.as_global_value().as_pointer_value(),
+        ctx.llvm_ctx.i8_type().ptr_type(AddressSpace::Generic),
+        "cast_invoke",
+    );
+
+    ctx.builder
+        .build_store(struct_invoke_fn_ptr, invoke_fn_cast);
+
+    let object = ctx
+        .builder
+        .build_call(
+            ctx.lookup_known_fn("unlisp_rt_object_from_function"),
+            &[struct_ptr.into()],
+            "object_from_fn",
+        )
+        .try_as_basic_value()
+        .left()
+        .unwrap();
+
+    Ok(object)
+}
+
 fn compile_literal(ctx: &mut CodegenContext, literal: &Literal) -> CompileResult {
     match literal {
         Literal::IntegerLiteral(i) => Ok(compile_integer(ctx, *i)),
         Literal::SymbolLiteral(s) => {
             let val = ctx
-                .lookup_in_env(s)
+                .lookup_name(s)
                 .ok_or_else(|| UndefinedSymbol::new(s.as_str()))?;
             Ok(val)
         }
@@ -353,6 +611,8 @@ fn compile_hir(ctx: &mut CodegenContext, hir: &HIR) -> CompileResult {
     match hir {
         HIR::Literal(literal) => compile_literal(ctx, literal),
         HIR::Call(call) => compile_call(ctx, call),
+        HIR::Closure(closure) => compile_closure(ctx, closure),
+        HIR::Lambda(_) => panic!("cannot compile raw lambda"),
         _ => panic!("unsupported HIR"),
     }
 }

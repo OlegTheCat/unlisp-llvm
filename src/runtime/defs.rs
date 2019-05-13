@@ -238,6 +238,7 @@ pub fn gen_defs(ctx: &Context, module: &Module) {
     unlisp_rt_intern_sym_gen_def(ctx, module);
     unlisp_rt_object_from_int_gen_def(ctx, module);
     unlisp_rt_int_from_obj_gen_def(ctx, module);
+    unlisp_rt_object_from_function_gen_def(ctx, module);
 }
 
 
@@ -286,4 +287,19 @@ fn unlisp_rt_int_from_obj_gen_def(ctx: &Context, module: &Module) {
     let obj_struct_ty = module.get_type("unlisp_rt_object").unwrap();
     let fn_type = i64_ty.fn_type(&[obj_struct_ty.into()], false);
     module.add_function("unlisp_rt_int_from_obj", fn_type, Some(Linkage::External));
+}
+
+#[no_mangle]
+pub extern fn unlisp_rt_object_from_function(f: *mut Function) -> Object {
+    Object::from_function(f)
+}
+
+#[used]
+static OBJ_FROM_FN: extern "C" fn(f: *mut Function) -> Object = unlisp_rt_object_from_function;
+
+fn unlisp_rt_object_from_function_gen_def(_: &Context, module: &Module) {
+    let arg_ty = module.get_type("unlisp_rt_function").unwrap().as_struct_type().ptr_type(AddressSpace::Generic);
+    let obj_struct_ty = module.get_type("unlisp_rt_object").unwrap();
+    let fn_type = obj_struct_ty.fn_type(&[arg_ty.into()], false);
+    module.add_function("unlisp_rt_object_from_function", fn_type, Some(Linkage::External));
 }
