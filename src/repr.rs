@@ -220,12 +220,12 @@ fn forms_to_hir(forms: &Vec<Form>) -> Result<HIR, SyntaxError> {
                             .get(2)
                             .ok_or_else(|| SyntaxError::new("no arglist in lambda"))?;
                         parsed_arglist = parse_arglist(arglist)?;
-                        body = forms_to_hirs(&forms[2..])?;
+                        body = forms_to_hirs(&forms[3..])?;
                     }
 
                     Form::List(_) => {
                         parsed_arglist = parse_arglist(name_or_arglist)?;
-                        body = forms_to_hirs(&forms[1..])?;
+                        body = forms_to_hirs(&forms[2..])?;
                     }
 
                     _ => return Err(SyntaxError::new("not a list in lambda arglist")),
@@ -254,15 +254,17 @@ fn forms_to_hir(forms: &Vec<Form>) -> Result<HIR, SyntaxError> {
 }
 
 pub fn form_to_hir(form: &Form) -> Result<HIR, SyntaxError> {
-    let hir = match form {
+    match form {
         Form::T => Ok(HIR::Literal(Literal::T)),
         Form::Symbol(s) => Ok(HIR::Literal(Literal::SymbolLiteral(s.to_owned()))),
         Form::Integer(i) => Ok(HIR::Literal(Literal::IntegerLiteral(*i))),
         Form::String(s) => Ok(HIR::Literal(Literal::StringLiteral(s.to_owned()))),
         Form::List(list) => forms_to_hir(list),
-    };
+    }
+}
 
-    Ok(convert_into_closures(&hir?))
+pub fn form_to_hir_with_transforms(form: &Form) -> Result<HIR, SyntaxError> {
+    Ok(convert_into_closures(&form_to_hir(form)?))
 }
 
 fn literal_to_form(literal: &Literal) -> Form {

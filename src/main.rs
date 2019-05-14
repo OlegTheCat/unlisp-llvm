@@ -47,7 +47,7 @@ fn main() -> Result<(), Box<Error>> {
     let ctx = Context::create();
     let mut codegen_ctx = codegen::CodegenContext::new(&ctx);
 
-    let fn_name = codegen_ctx.compile_top_level(&vec![read("(+ 1 2)"),
+    let fn_name = codegen_ctx.compile_top_level(&vec![read("(lambda first (x y) (lambda second (z p) (+ p (+ z (+ x y)))))"),
                                                       // read("(foo 1 2)")
     ]).unwrap();
 

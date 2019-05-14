@@ -1,7 +1,7 @@
 use libc::c_char;
 use libc::c_void;
-use std::ptr;
 use std::fmt;
+use std::ptr;
 
 use inkwell::context::Context;
 use inkwell::module::{Linkage, Module};
@@ -16,7 +16,7 @@ pub union UntaggedObject {
     list: *mut List,
     sym: *mut Symbol,
     function: *mut Function,
-    nil: *const c_void
+    nil: *const c_void,
 }
 
 #[derive(Clone, Eq, PartialEq)]
@@ -51,7 +51,11 @@ impl Object {
     }
 
     fn type_err(&self, t_name: &str) -> ! {
-        panic!("Cannot unpack Object of type {} as {}", self.ty.as_i32(), t_name);
+        panic!(
+            "Cannot unpack Object of type {} as {}",
+            self.ty.as_i32(),
+            t_name
+        );
     }
 
     pub fn unpack_int(&self) -> i64 {
@@ -97,35 +101,35 @@ impl Object {
     pub fn from_int(i: i64) -> Object {
         Self {
             ty: ObjType::Int64,
-            obj: UntaggedObject { int: i }
+            obj: UntaggedObject { int: i },
         }
     }
 
     pub fn from_list(list: *mut List) -> Object {
         Self {
             ty: ObjType::List,
-            obj: UntaggedObject { list: list }
+            obj: UntaggedObject { list: list },
         }
     }
 
     pub fn from_symbol(sym: *mut Symbol) -> Object {
         Self {
             ty: ObjType::Symbol,
-            obj: UntaggedObject { sym: sym }
+            obj: UntaggedObject { sym: sym },
         }
     }
 
     pub fn from_function(function: *mut Function) -> Object {
         Self {
             ty: ObjType::Function,
-            obj: UntaggedObject { function: function }
+            obj: UntaggedObject { function: function },
         }
     }
 
     pub fn nil() -> Object {
         Self {
             ty: ObjType::Nil,
-            obj: UntaggedObject { nil: ptr::null() }
+            obj: UntaggedObject { nil: ptr::null() },
         }
     }
 }
@@ -135,8 +139,11 @@ impl fmt::Display for Object {
         match self.ty {
             ObjType::Int64 => write!(f, "Object[int64, {}]", unsafe { self.obj.int }),
             ObjType::List => write!(f, "Object[list, ...]"),
+            ObjType::Function => write!(f, "Object[fn, {}]", unsafe {
+                (*self.obj.function).arg_count
+            }),
             ObjType::Nil => write!(f, "Object[nil]"),
-            _ => panic!("unsupported type")
+            _ => panic!("unsupported type"),
         }
     }
 }
@@ -164,7 +171,10 @@ pub struct Symbol {
 
 impl Symbol {
     fn gen_llvm_def(context: &Context, module: &Module) {
-        let func_struct_ty = module.get_type("unlisp_rt_function").unwrap().into_struct_type();
+        let func_struct_ty = module
+            .get_type("unlisp_rt_function")
+            .unwrap()
+            .into_struct_type();
 
         let name_ptr_ty = context.i8_type().ptr_type(AddressSpace::Generic);
         let func_ptr_ty = func_struct_ty.ptr_type(AddressSpace::Generic);
@@ -205,7 +215,8 @@ impl Function {
 
         let ty_ty = context.i32_type();
         let ty_name = context.i8_type().ptr_type(AddressSpace::Generic);
-        let ty_arglist = context.i8_type()
+        let ty_arglist = context
+            .i8_type()
             .ptr_type(AddressSpace::Generic)
             .ptr_type(AddressSpace::Generic);
         let ty_arg_count = context.i64_type();
@@ -221,13 +232,12 @@ impl Function {
                 ty_arg_count.into(),
                 ty_is_macro.into(),
                 ty_invoke_f_ptr.into(),
-                ty_apply_to_f_ptr.into()
+                ty_apply_to_f_ptr.into(),
             ],
             false,
         );
     }
 }
-
 
 pub fn gen_defs(ctx: &Context, module: &Module) {
     Object::gen_llvm_def(ctx);
@@ -239,11 +249,18 @@ pub fn gen_defs(ctx: &Context, module: &Module) {
     unlisp_rt_object_from_int_gen_def(ctx, module);
     unlisp_rt_int_from_obj_gen_def(ctx, module);
     unlisp_rt_object_from_function_gen_def(ctx, module);
+    malloc_gen_def(ctx, module);
 }
 
+fn malloc_gen_def(ctx: &Context, module: &Module) {
+    let i8_ptr_ty = ctx.i8_type().ptr_type(AddressSpace::Generic);
+    let i32_ty = ctx.i32_type();
+    let malloc_fn_ty = i8_ptr_ty.fn_type(&[i32_ty.into()], false);
+    module.add_function("malloc", malloc_fn_ty, Some(Linkage::External));
+}
 
 #[no_mangle]
-pub extern fn unlisp_rt_intern_sym(name: *const c_char) -> *mut Symbol {
+pub extern "C" fn unlisp_rt_intern_sym(name: *const c_char) -> *mut Symbol {
     symbols::get_or_intern_symbol_by_ptr(name)
 }
 
@@ -253,14 +270,16 @@ static INTERN_SYM: extern "C" fn(name: *const c_char) -> *mut Symbol = unlisp_rt
 fn unlisp_rt_intern_sym_gen_def(ctx: &Context, module: &Module) {
     let arg_ty = ctx.i8_type().ptr_type(AddressSpace::Generic);
     let sym_struct_ty = module.get_type("unlisp_rt_symbol").unwrap();
-    let sym_struct_ptr_ty = sym_struct_ty.as_struct_type().ptr_type(AddressSpace::Generic);
+    let sym_struct_ptr_ty = sym_struct_ty
+        .as_struct_type()
+        .ptr_type(AddressSpace::Generic);
 
     let fn_type = sym_struct_ptr_ty.fn_type(&[arg_ty.into()], false);
     module.add_function("unlisp_rt_intern_sym", fn_type, Some(Linkage::External));
 }
 
 #[no_mangle]
-pub extern fn unlisp_rt_object_from_int(i: i64) -> Object {
+pub extern "C" fn unlisp_rt_object_from_int(i: i64) -> Object {
     Object::from_int(i)
 }
 
@@ -271,11 +290,15 @@ fn unlisp_rt_object_from_int_gen_def(ctx: &Context, module: &Module) {
     let arg_ty = ctx.i64_type();
     let obj_struct_ty = module.get_type("unlisp_rt_object").unwrap();
     let fn_type = obj_struct_ty.fn_type(&[arg_ty.into()], false);
-    module.add_function("unlisp_rt_object_from_int", fn_type, Some(Linkage::External));
+    module.add_function(
+        "unlisp_rt_object_from_int",
+        fn_type,
+        Some(Linkage::External),
+    );
 }
 
 #[no_mangle]
-pub extern fn unlisp_rt_int_from_obj(o: Object) -> i64 {
+pub extern "C" fn unlisp_rt_int_from_obj(o: Object) -> i64 {
     o.unpack_int()
 }
 
@@ -290,7 +313,7 @@ fn unlisp_rt_int_from_obj_gen_def(ctx: &Context, module: &Module) {
 }
 
 #[no_mangle]
-pub extern fn unlisp_rt_object_from_function(f: *mut Function) -> Object {
+pub extern "C" fn unlisp_rt_object_from_function(f: *mut Function) -> Object {
     Object::from_function(f)
 }
 
@@ -298,8 +321,16 @@ pub extern fn unlisp_rt_object_from_function(f: *mut Function) -> Object {
 static OBJ_FROM_FN: extern "C" fn(f: *mut Function) -> Object = unlisp_rt_object_from_function;
 
 fn unlisp_rt_object_from_function_gen_def(_: &Context, module: &Module) {
-    let arg_ty = module.get_type("unlisp_rt_function").unwrap().as_struct_type().ptr_type(AddressSpace::Generic);
+    let arg_ty = module
+        .get_type("unlisp_rt_function")
+        .unwrap()
+        .as_struct_type()
+        .ptr_type(AddressSpace::Generic);
     let obj_struct_ty = module.get_type("unlisp_rt_object").unwrap();
     let fn_type = obj_struct_ty.fn_type(&[arg_ty.into()], false);
-    module.add_function("unlisp_rt_object_from_function", fn_type, Some(Linkage::External));
+    module.add_function(
+        "unlisp_rt_object_from_function",
+        fn_type,
+        Some(Linkage::External),
+    );
 }

@@ -175,7 +175,7 @@ impl<'a> CodegenContext<'a> {
     pub fn compile_top_level(&mut self, forms: &[Form]) -> GenResult<String> {
         let hirs = forms
             .iter()
-            .map(|form| form_to_hir(form))
+            .map(|form| form_to_hir_with_transforms(form))
             .collect::<Result<Vec<_>, _>>()?;
         self.compile_top_level_hir(hirs.as_slice())
     }
@@ -473,6 +473,7 @@ fn codegen_invoke_fn(
 
     let mut par_iter = function.get_param_iter();
     let struct_ptr_par = par_iter.next().unwrap().into_pointer_value();
+    struct_ptr_par.set_name("fn_obj");
 
     let mut raw_fn_args = vec![];
 
@@ -485,7 +486,10 @@ fn codegen_invoke_fn(
         raw_fn_args.push(arg);
     }
 
-    raw_fn_args.extend(par_iter);
+    for (par, name) in par_iter.zip(closure.lambda.arglist.iter()) {
+        par.as_struct_value().set_name(name);
+        raw_fn_args.push(par);
+    }
 
     let raw_call = ctx
         .builder
@@ -580,11 +584,19 @@ fn compile_closure(ctx: &mut CodegenContext, closure: &Closure) -> CompileResult
     ctx.builder
         .build_store(struct_invoke_fn_ptr, invoke_fn_cast);
 
+    let struct_ptr_cast = ctx.builder.build_bitcast(
+        struct_ptr,
+        ctx.lookup_known_type("unlisp_rt_function")
+            .as_struct_type()
+            .ptr_type(AddressSpace::Generic),
+        "function_obj_ptr",
+    );
+
     let object = ctx
         .builder
         .build_call(
             ctx.lookup_known_fn("unlisp_rt_object_from_function"),
-            &[struct_ptr.into()],
+            &[struct_ptr_cast.into()],
             "object_from_fn",
         )
         .try_as_basic_value()
