@@ -47,8 +47,10 @@ fn main() -> Result<(), Box<Error>> {
     let ctx = Context::create();
     let mut codegen_ctx = codegen::CodegenContext::new(&ctx);
 
-    let fn_name = codegen_ctx.compile_top_level(&vec![read("(lambda first (x y) (lambda second (z p) (+ p (+ z (+ x y)))))"),
-                                                      // read("(foo 1 2)")
+    let fn_name = codegen_ctx.compile_top_level(&vec![
+        read("(set-fn (quote foo) (lambda (x y) (lambda (z p) (+ x (+ y (+ z p))))))"),
+        read("(set-fn (quote bar) (foo 1 2))"),
+        read("(bar 3 4)")
     ]).unwrap();
 
     codegen_ctx.get_module().print_to_stderr();

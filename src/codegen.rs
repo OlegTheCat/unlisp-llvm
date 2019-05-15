@@ -345,6 +345,7 @@ fn compile_call(ctx: &mut CodegenContext, call: &Call) -> CompileResult {
         .map(|arg| compile_hir(ctx, arg))
         .collect::<Result<Vec<_>, _>>()?;
 
+    compiled_args.reverse();
     compiled_args.push(function_ptr.into());
     compiled_args.reverse();
 
@@ -480,7 +481,7 @@ fn codegen_invoke_fn(
     for (i, _) in closure.free_vars.iter().enumerate() {
         let arg_ptr = unsafe {
             ctx.builder
-                .build_struct_gep(struct_ptr_par, 6 + i as u32, "free_var_ptr")
+                .build_struct_gep(struct_ptr_par, 7 + i as u32, "free_var_ptr")
         };
         let arg = ctx.builder.build_load(arg_ptr, "free_var");
         raw_fn_args.push(arg);
@@ -584,6 +585,15 @@ fn compile_closure(ctx: &mut CodegenContext, closure: &Closure) -> CompileResult
     ctx.builder
         .build_store(struct_invoke_fn_ptr, invoke_fn_cast);
 
+    for (i, var) in closure.free_vars.iter().enumerate() {
+        let var_val = ctx
+            .lookup_name(var)
+            .ok_or_else(|| UndefinedSymbol::new(var.as_str()))?;
+
+        let free_var_ptr = unsafe { ctx.builder.build_struct_gep(struct_ptr, 7 + i as u32, "free_var_ptr") };
+        ctx.builder.build_store(free_var_ptr, var_val);
+    }
+
     let struct_ptr_cast = ctx.builder.build_bitcast(
         struct_ptr,
         ctx.lookup_known_type("unlisp_rt_function")
@@ -619,12 +629,42 @@ fn compile_literal(ctx: &mut CodegenContext, literal: &Literal) -> CompileResult
     }
 }
 
+fn compile_quoted_symbol(ctx: &mut CodegenContext, name: &String) -> BasicValueEnum {
+    let sym_name_ptr = ctx.name_as_i8_ptr(name.as_str());
+
+    let intern_fn = ctx.lookup_known_fn("unlisp_rt_intern_sym");
+    let interned_sym_ptr = ctx
+        .builder
+        .build_call(intern_fn, &[sym_name_ptr.into()], "intern")
+        .try_as_basic_value()
+        .left()
+        .unwrap()
+        .into_pointer_value();
+
+    let intern_fn = ctx.lookup_known_fn("unlisp_rt_object_from_symbol");
+
+    ctx
+        .builder
+        .build_call(intern_fn, &[interned_sym_ptr.into()], "object")
+        .try_as_basic_value()
+        .left()
+        .unwrap()
+}
+
+fn compile_quoted_literal(ctx: &mut CodegenContext, literal: &Literal) -> CompileResult {
+    match literal {
+        Literal::SymbolLiteral(s) => Ok(compile_quoted_symbol(ctx, s)),
+        _ => unimplemented!()
+    }
+}
+
 fn compile_hir(ctx: &mut CodegenContext, hir: &HIR) -> CompileResult {
     match hir {
         HIR::Literal(literal) => compile_literal(ctx, literal),
         HIR::Call(call) => compile_call(ctx, call),
         HIR::Closure(closure) => compile_closure(ctx, closure),
         HIR::Lambda(_) => panic!("cannot compile raw lambda"),
+        HIR::Quote(quote) => compile_quoted_literal(ctx, &quote.body),
         _ => panic!("unsupported HIR"),
     }
 }

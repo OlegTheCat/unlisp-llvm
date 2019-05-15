@@ -1,5 +1,6 @@
 use libc::c_char;
 use libc::c_void;
+use std::ffi::CStr;
 use std::fmt;
 use std::ptr;
 
@@ -142,6 +143,9 @@ impl fmt::Display for Object {
             ObjType::Function => write!(f, "Object[fn, {}]", unsafe {
                 (*self.obj.function).arg_count
             }),
+            ObjType::Symbol => write!(f, "Object[symbol, {}]", unsafe {
+                CStr::from_ptr((*self.obj.sym).name).to_str().unwrap()
+            }),
             ObjType::Nil => write!(f, "Object[nil]"),
             _ => panic!("unsupported type"),
         }
@@ -249,6 +253,7 @@ pub fn gen_defs(ctx: &Context, module: &Module) {
     unlisp_rt_object_from_int_gen_def(ctx, module);
     unlisp_rt_int_from_obj_gen_def(ctx, module);
     unlisp_rt_object_from_function_gen_def(ctx, module);
+    unlisp_rt_object_from_symbol_gen_def(ctx, module);
     malloc_gen_def(ctx, module);
 }
 
@@ -330,6 +335,29 @@ fn unlisp_rt_object_from_function_gen_def(_: &Context, module: &Module) {
     let fn_type = obj_struct_ty.fn_type(&[arg_ty.into()], false);
     module.add_function(
         "unlisp_rt_object_from_function",
+        fn_type,
+        Some(Linkage::External),
+    );
+}
+
+#[no_mangle]
+pub extern "C" fn unlisp_rt_object_from_symbol(s: *mut Symbol) -> Object {
+    Object::from_symbol(s)
+}
+
+#[used]
+static OBJ_FROM_SYM: extern "C" fn(f: *mut Symbol) -> Object = unlisp_rt_object_from_symbol;
+
+fn unlisp_rt_object_from_symbol_gen_def(_: &Context, module: &Module) {
+    let arg_ty = module
+        .get_type("unlisp_rt_symbol")
+        .unwrap()
+        .as_struct_type()
+        .ptr_type(AddressSpace::Generic);
+    let obj_struct_ty = module.get_type("unlisp_rt_object").unwrap();
+    let fn_type = obj_struct_ty.fn_type(&[arg_ty.into()], false);
+    module.add_function(
+        "unlisp_rt_object_from_symbol",
         fn_type,
         Some(Linkage::External),
     );

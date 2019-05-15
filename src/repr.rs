@@ -44,7 +44,7 @@ pub struct Lambda {
 
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub struct Quote {
-    pub body: Box<HIR>,
+    pub body: Literal,
 }
 
 #[derive(Debug, PartialEq, Eq, Clone)]
@@ -107,6 +107,13 @@ impl fmt::Display for SyntaxError {
 
 impl Error for SyntaxError {}
 
+fn form_to_literal(form: &Form) -> Literal {
+    match form {
+        Form::Symbol(s) => Literal::SymbolLiteral(s.clone()),
+        _ => unimplemented!(),
+    }
+}
+
 fn forms_to_hirs(forms: &[Form]) -> Result<Vec<HIR>, SyntaxError> {
     forms.iter().map(form_to_hir).collect::<Result<Vec<_>, _>>()
 }
@@ -124,7 +131,17 @@ fn forms_to_hir(forms: &Vec<Form>) -> Result<HIR, SyntaxError> {
                 Err(SyntaxError::new("illegal function call"))
             }
 
-            Form::Symbol(s) if is(s, "quote") => unimplemented!(),
+            Form::Symbol(s) if is(s, "quote") => {
+                let quote = Quote {
+                    body: form_to_literal(
+                        forms
+                            .get(1)
+                            .ok_or_else(|| SyntaxError::new("no arg to quote"))?,
+                    ),
+                };
+
+                Ok(HIR::Quote(quote))
+            }
 
             Form::Symbol(s) if is(s, "if") => {
                 let cond = forms
@@ -319,7 +336,7 @@ fn convert_lambda_body_item(
             }
 
             HIR::Closure(closure)
-        },
+        }
         HIR::Closure(_) => panic!("unexpected closure"),
         HIR::Call(call) => {
             let call = Call {
@@ -366,16 +383,27 @@ fn convert_lambda_body_item(
         HIR::Quote(quote) => HIR::Quote(quote.clone()),
         HIR::If(if_hir) => {
             let converted = If {
-                cond: Box::new(convert_lambda_body_item(bound_vars, free_vars, if_hir.cond.deref())),
-                then_hir: Box::new(convert_lambda_body_item(bound_vars, free_vars, if_hir.then_hir.deref())),
-                else_hir: if_hir
-                    .else_hir
-                    .as_ref()
-                    .map(|box_hir| Box::new(convert_lambda_body_item(bound_vars, free_vars, box_hir.deref()))),
+                cond: Box::new(convert_lambda_body_item(
+                    bound_vars,
+                    free_vars,
+                    if_hir.cond.deref(),
+                )),
+                then_hir: Box::new(convert_lambda_body_item(
+                    bound_vars,
+                    free_vars,
+                    if_hir.then_hir.deref(),
+                )),
+                else_hir: if_hir.else_hir.as_ref().map(|box_hir| {
+                    Box::new(convert_lambda_body_item(
+                        bound_vars,
+                        free_vars,
+                        box_hir.deref(),
+                    ))
+                }),
             };
 
             HIR::If(converted)
-        },
+        }
     }
 }
 
