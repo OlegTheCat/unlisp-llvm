@@ -7,7 +7,7 @@ use inkwell::context::Context;
 use inkwell::module::Module;
 use inkwell::types::{BasicType, BasicTypeEnum, StructType};
 use inkwell::values::{BasicValueEnum, FunctionValue, GlobalValue};
-use inkwell::AddressSpace;
+use inkwell::{AddressSpace, IntPredicate};
 use std::collections::{HashMap, HashSet};
 
 use std::error::Error;
@@ -161,9 +161,45 @@ impl<'a> CodegenContext<'a> {
         let fn_name = self.mangle_str("__repl_form");
         let function = self.module.add_function(&fn_name, fn_ty, None);
 
-        self.enter_block(&function);
+        self.enter_fn_block(&function);
+
+        let buf_ptr = self
+            .builder
+            .build_alloca(self.lookup_known_type("setjmp_buf"), "setjmp_buf");
+        let setjmp = self
+            .builder
+            .build_call(self.lookup_known_fn("setjmp"), &[buf_ptr.into()], "setjmp")
+            .try_as_basic_value()
+            .left()
+            .unwrap()
+            .into_int_value();
+
+        let ok_block = self.llvm_ctx.append_basic_block(&function, "ok");
+        let err_block = self.llvm_ctx.append_basic_block(&function, "err");
+
+        let br = self
+            .builder
+            .build_conditional_branch(setjmp, &err_block, &ok_block);
+
+        self.builder.position_at_end(&ok_block);
+        self.blocks_stack.push(Rc::new(ok_block));
 
         let val = compile_hirs(self, hirs)?;
+
+        self.builder.build_call(
+            self.lookup_known_fn("longjmp"),
+            &[
+                buf_ptr.into(),
+                self.llvm_ctx.i32_type().const_int(1, false).into(),
+            ],
+            "longjmp",
+        );
+
+        self.builder.build_return(Some(&val));
+
+        self.blocks_stack.pop();
+        self.builder.position_at_end(&err_block);
+        let val = compile_hirs(self, &[HIR::Literal(Literal::IntegerLiteral(2))])?;
 
         self.builder.build_return(Some(&val));
 
@@ -203,18 +239,31 @@ impl<'a> CodegenContext<'a> {
         self.envs.pop();
     }
 
-    fn enter_block(&mut self, function: &FunctionValue) {
+    fn enter_block(&mut self) -> Rc<BasicBlock> {
+        let last_block = self
+            .blocks_stack
+            .last()
+            .expect("cannot enter_block without function");
+        let function = last_block
+            .get_parent()
+            .expect("cannot enter_block without function");
+
+        self.enter_fn_block(&function)
+    }
+
+    fn enter_fn_block(&mut self, function: &FunctionValue) -> Rc<BasicBlock> {
         let block = self.llvm_ctx.append_basic_block(&function, "entry");
         let block_rc = Rc::new(block);
 
         self.builder.position_at_end(&block_rc);
-        self.blocks_stack.push(block_rc);
+        self.blocks_stack.push(block_rc.clone());
+        block_rc
     }
 
     fn exit_block(&mut self) {
         self.blocks_stack.pop();
         self.builder
-            .position_at_end(&self.blocks_stack[self.blocks_stack.len() - 1]);
+            .position_at_end(self.blocks_stack.last().unwrap());
     }
 }
 
@@ -378,7 +427,7 @@ fn codegen_raw_fn(ctx: &mut CodegenContext, closure: &Closure) -> GenResult<Func
     let function = ctx.module.add_function(&fn_name, fn_ty, None);
 
     ctx.push_env();
-    ctx.enter_block(&function);
+    ctx.enter_fn_block(&function);
 
     let args_iter = closure
         .free_vars
@@ -470,7 +519,7 @@ fn codegen_invoke_fn(
     let fn_ty = obj_struct_ty.fn_type(arg_tys.as_slice(), false);
     let function = ctx.module.add_function(&fn_name, fn_ty, None);
 
-    ctx.enter_block(&function);
+    ctx.enter_fn_block(&function);
 
     let mut par_iter = function.get_param_iter();
     let struct_ptr_par = par_iter.next().unwrap().into_pointer_value();
@@ -590,7 +639,10 @@ fn compile_closure(ctx: &mut CodegenContext, closure: &Closure) -> CompileResult
             .lookup_name(var)
             .ok_or_else(|| UndefinedSymbol::new(var.as_str()))?;
 
-        let free_var_ptr = unsafe { ctx.builder.build_struct_gep(struct_ptr, 7 + i as u32, "free_var_ptr") };
+        let free_var_ptr = unsafe {
+            ctx.builder
+                .build_struct_gep(struct_ptr, 7 + i as u32, "free_var_ptr")
+        };
         ctx.builder.build_store(free_var_ptr, var_val);
     }
 
@@ -643,8 +695,7 @@ fn compile_quoted_symbol(ctx: &mut CodegenContext, name: &String) -> BasicValueE
 
     let intern_fn = ctx.lookup_known_fn("unlisp_rt_object_from_symbol");
 
-    ctx
-        .builder
+    ctx.builder
         .build_call(intern_fn, &[interned_sym_ptr.into()], "object")
         .try_as_basic_value()
         .left()
@@ -654,8 +705,48 @@ fn compile_quoted_symbol(ctx: &mut CodegenContext, name: &String) -> BasicValueE
 fn compile_quoted_literal(ctx: &mut CodegenContext, literal: &Literal) -> CompileResult {
     match literal {
         Literal::SymbolLiteral(s) => Ok(compile_quoted_symbol(ctx, s)),
-        _ => unimplemented!()
+        _ => unimplemented!(),
     }
+}
+
+fn compile_if(ctx: &mut CodegenContext, if_hir: &If) -> CompileResult {
+    let compiled_cond = compile_hir(ctx, &if_hir.cond)?;
+
+    let then_block = ctx.enter_block();
+    let compiled_then = compile_hir(ctx, &if_hir.then_hir)?;
+    ctx.exit_block();
+
+    let else_block = ctx.enter_block();
+    let compiled_else = compile_hir(
+        ctx,
+        if_hir
+            .else_hir
+            .as_ref()
+            .expect("single branch if is not supported"),
+    )?;
+    ctx.exit_block();
+
+    let cond_alloca = ctx.builder.build_alloca(ctx.lookup_known_type("unlisp_rt_object"), "cond_ptr");
+    ctx.builder.build_store(cond_alloca, compiled_cond);
+
+    let type_ptr = unsafe { ctx.builder.build_struct_gep(cond_alloca, 0, "type_ptr") };
+    let type_val = ctx.builder.build_load(type_ptr, "type_val");
+    let cmp = ctx.builder.build_int_compare(IntPredicate::NE, type_val.into_int_value(), ctx.llvm_ctx.i32_type().const_int(2, false), "is_list");
+    ctx.builder.build_conditional_branch(cmp, &then_block, &else_block);
+
+    let merge_block = ctx.enter_block();
+
+    ctx.builder.position_at_end(&then_block);
+    ctx.builder.build_unconditional_branch(&merge_block);
+    ctx.builder.position_at_end(&else_block);
+    ctx.builder.build_unconditional_branch(&merge_block);
+
+    ctx.builder.position_at_end(&merge_block);
+
+    let phi = ctx.builder.build_phi(ctx.lookup_known_type("unlisp_rt_object"), "phi");
+    phi.add_incoming(&[(&compiled_then, &then_block), (&compiled_else, &else_block)]);
+
+    Ok(phi.as_basic_value())
 }
 
 fn compile_hir(ctx: &mut CodegenContext, hir: &HIR) -> CompileResult {
@@ -664,6 +755,7 @@ fn compile_hir(ctx: &mut CodegenContext, hir: &HIR) -> CompileResult {
         HIR::Call(call) => compile_call(ctx, call),
         HIR::Closure(closure) => compile_closure(ctx, closure),
         HIR::Lambda(_) => panic!("cannot compile raw lambda"),
+        HIR::If(if_hir) => compile_if(ctx, if_hir),
         HIR::Quote(quote) => compile_quoted_literal(ctx, &quote.body),
         _ => panic!("unsupported HIR"),
     }
