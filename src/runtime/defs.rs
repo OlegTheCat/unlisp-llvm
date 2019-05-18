@@ -261,6 +261,7 @@ pub fn gen_defs(ctx: &Context, module: &Module) {
     unlisp_rt_int_from_obj_gen_def(ctx, module);
     unlisp_rt_object_from_function_gen_def(ctx, module);
     unlisp_rt_object_from_symbol_gen_def(ctx, module);
+    unlisp_rt_object_is_nil_gen_def(ctx, module);
     malloc_gen_def(ctx, module);
     sjlj_gen_def(ctx, module);
 }
@@ -387,6 +388,31 @@ fn unlisp_rt_object_from_symbol_gen_def(_: &Context, module: &Module) {
     let fn_type = obj_struct_ty.fn_type(&[arg_ty.into()], false);
     module.add_function(
         "unlisp_rt_object_from_symbol",
+        fn_type,
+        Some(Linkage::External),
+    );
+}
+
+
+#[no_mangle]
+pub extern "C" fn unlisp_rt_object_is_nil(o: Object) -> bool {
+    o.ty == ObjType::List && {
+        let list_ptr = o.unpack_list();
+        unsafe { (*list_ptr).len == 0 }
+    }
+}
+
+#[used]
+static IS_NIL: extern "C" fn(Object) -> bool = unlisp_rt_object_is_nil;
+
+fn unlisp_rt_object_is_nil_gen_def(ctx: &Context, module: &Module) {
+    let arg_ty = module
+        .get_type("unlisp_rt_object")
+        .unwrap();
+
+    let fn_type = ctx.bool_type().fn_type(&[arg_ty.into()], false);
+    module.add_function(
+        "unlisp_rt_object_is_nil",
         fn_type,
         Some(Linkage::External),
     );

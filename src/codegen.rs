@@ -186,14 +186,14 @@ impl<'a> CodegenContext<'a> {
 
         let val = compile_hirs(self, hirs)?;
 
-        self.builder.build_call(
-            self.lookup_known_fn("longjmp"),
-            &[
-                buf_ptr.into(),
-                self.llvm_ctx.i32_type().const_int(1, false).into(),
-            ],
-            "longjmp",
-        );
+        // self.builder.build_call(
+        //     self.lookup_known_fn("longjmp"),
+        //     &[
+        //         buf_ptr.into(),
+        //         self.llvm_ctx.i32_type().const_int(1, false).into(),
+        //     ],
+        //     "longjmp",
+        // );
 
         self.builder.build_return(Some(&val));
 
@@ -237,6 +237,26 @@ impl<'a> CodegenContext<'a> {
 
     fn pop_env(&mut self) {
         self.envs.pop();
+    }
+
+    fn replace_last_block(&mut self, block: BasicBlock) -> Rc<BasicBlock> {
+        let rc = Rc::new(block);
+        let idx = self.blocks_stack.len() - 1;
+        self.blocks_stack[idx] = rc.clone();
+        self.builder.position_at_end(&rc);
+        rc
+    }
+
+    fn append_block(&self) -> BasicBlock {
+        let last_block = self
+            .blocks_stack
+            .last()
+            .expect("cannot enter_block without function");
+        let function = last_block
+            .get_parent()
+            .expect("cannot enter_block without function");
+
+        self.llvm_ctx.append_basic_block(&function, "entry")
     }
 
     fn enter_block(&mut self) -> Rc<BasicBlock> {
@@ -710,10 +730,13 @@ fn compile_quoted_literal(ctx: &mut CodegenContext, literal: &Literal) -> Compil
 }
 
 fn compile_if(ctx: &mut CodegenContext, if_hir: &If) -> CompileResult {
+    let merge_block = ctx.append_block();
+
     let compiled_cond = compile_hir(ctx, &if_hir.cond)?;
 
     let then_block = ctx.enter_block();
     let compiled_then = compile_hir(ctx, &if_hir.then_hir)?;
+    ctx.builder.build_unconditional_branch(&merge_block);
     ctx.exit_block();
 
     let else_block = ctx.enter_block();
@@ -724,26 +747,29 @@ fn compile_if(ctx: &mut CodegenContext, if_hir: &If) -> CompileResult {
             .as_ref()
             .expect("single branch if is not supported"),
     )?;
+    ctx.builder.build_unconditional_branch(&merge_block);
     ctx.exit_block();
 
-    let cond_alloca = ctx.builder.build_alloca(ctx.lookup_known_type("unlisp_rt_object"), "cond_ptr");
-    ctx.builder.build_store(cond_alloca, compiled_cond);
+    let is_nil = ctx
+        .builder
+        .build_call(
+            ctx.lookup_known_fn("unlisp_rt_object_is_nil"),
+            &[compiled_cond.into()],
+            "is_nil",
+        )
+        .try_as_basic_value()
+        .left()
+        .unwrap()
+        .into_int_value();
 
-    let type_ptr = unsafe { ctx.builder.build_struct_gep(cond_alloca, 0, "type_ptr") };
-    let type_val = ctx.builder.build_load(type_ptr, "type_val");
-    let cmp = ctx.builder.build_int_compare(IntPredicate::NE, type_val.into_int_value(), ctx.llvm_ctx.i32_type().const_int(2, false), "is_list");
-    ctx.builder.build_conditional_branch(cmp, &then_block, &else_block);
+    ctx.builder
+        .build_conditional_branch(is_nil, &else_block, &then_block);
 
-    let merge_block = ctx.enter_block();
+    ctx.replace_last_block(merge_block);
 
-    ctx.builder.position_at_end(&then_block);
-    ctx.builder.build_unconditional_branch(&merge_block);
-    ctx.builder.position_at_end(&else_block);
-    ctx.builder.build_unconditional_branch(&merge_block);
-
-    ctx.builder.position_at_end(&merge_block);
-
-    let phi = ctx.builder.build_phi(ctx.lookup_known_type("unlisp_rt_object"), "phi");
+    let phi = ctx
+        .builder
+        .build_phi(ctx.lookup_known_type("unlisp_rt_object"), "phi");
     phi.add_incoming(&[(&compiled_then, &then_block), (&compiled_else, &else_block)]);
 
     Ok(phi.as_basic_value())

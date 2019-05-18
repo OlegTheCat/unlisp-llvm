@@ -29,11 +29,10 @@ fn main() {
 
     let fn_name = codegen_ctx
         .compile_top_level(&vec![
-            // read("(set-fn (quote foo) (lambda (x y) (lambda (z p) (+ x (+ y (+ z p))))))"),
-            // read("(set-fn (quote bar) (foo 1 2))"),
-            // read("(bar 3 4)"),
-
-            read("(if 1 100 3)")
+            read("(if 1 (set-fn (quote foo) (lambda (x y) (lambda (z p) (+ x (+ y (+ z p)))))) 2)"),
+            read("(if 2 (set-fn (quote bar) (foo 1 2)) 2)"),
+            read("(bar 3 4)"),
+            read("(if 1 (bar 3 4) 3)")
         ])
         .unwrap();
 
