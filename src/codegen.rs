@@ -688,8 +688,17 @@ fn compile_closure(ctx: &mut CodegenContext, closure: &Closure) -> CompileResult
     Ok(object)
 }
 
+fn compile_nil_literal(ctx: &mut CodegenContext) -> BasicValueEnum {
+    ctx.builder
+        .build_call(ctx.lookup_known_fn("unlisp_rt_nil_object"), &[], "nil_obj")
+        .try_as_basic_value()
+        .left()
+        .unwrap()
+}
+
 fn compile_literal(ctx: &mut CodegenContext, literal: &Literal) -> CompileResult {
     match literal {
+        Literal::ListLiteral(vec) if vec.is_empty() => Ok(compile_nil_literal(ctx)),
         Literal::IntegerLiteral(i) => Ok(compile_integer(ctx, *i)),
         Literal::SymbolLiteral(s) => {
             let val = ctx

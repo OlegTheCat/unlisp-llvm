@@ -139,7 +139,7 @@ impl fmt::Display for Object {
     fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
         match self.ty {
             ObjType::Int64 => write!(f, "Object[int64, {}]", unsafe { self.obj.int }),
-            ObjType::List => write!(f, "Object[list, ...]"),
+            ObjType::List => write!(f, "Object[list, {}]", unsafe { (*self.obj.list).len }),
             ObjType::Function => write!(f, "Object[fn, {}]", unsafe {
                 (*self.obj.function).arg_count
             }),
@@ -262,6 +262,7 @@ pub fn gen_defs(ctx: &Context, module: &Module) {
     unlisp_rt_object_from_function_gen_def(ctx, module);
     unlisp_rt_object_from_symbol_gen_def(ctx, module);
     unlisp_rt_object_is_nil_gen_def(ctx, module);
+    unlisp_rt_nil_object_gen_def(ctx, module);
     malloc_gen_def(ctx, module);
     sjlj_gen_def(ctx, module);
 }
@@ -413,6 +414,32 @@ fn unlisp_rt_object_is_nil_gen_def(ctx: &Context, module: &Module) {
     let fn_type = ctx.bool_type().fn_type(&[arg_ty.into()], false);
     module.add_function(
         "unlisp_rt_object_is_nil",
+        fn_type,
+        Some(Linkage::External),
+    );
+}
+
+#[no_mangle]
+pub extern "C" fn unlisp_rt_nil_object() -> Object {
+    let list = List {
+        node: ptr::null_mut(),
+        len: 0
+    };
+
+    Object::from_list(Box::into_raw(Box::new(list)))
+}
+
+#[used]
+static NIL_OBJ: extern "C" fn() -> Object = unlisp_rt_nil_object;
+
+fn unlisp_rt_nil_object_gen_def(ctx: &Context, module: &Module) {
+    let obj_ty = module
+        .get_type("unlisp_rt_object")
+        .unwrap();
+
+    let fn_type = obj_ty.fn_type(&[], false);
+    module.add_function(
+        "unlisp_rt_nil_object",
         fn_type,
         Some(Linkage::External),
     );
