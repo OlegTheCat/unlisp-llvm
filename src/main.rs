@@ -4,6 +4,9 @@ use inkwell::context::Context;
 use inkwell::execution_engine::JitFunction;
 use inkwell::OptimizationLevel;
 
+use std::io;
+use std::io::Write;
+
 mod codegen;
 mod cons;
 mod error;
@@ -20,6 +23,52 @@ pub fn read(s: impl Into<String>) -> repr::Form {
     reader.read_form().unwrap().unwrap()
 }
 
+fn repl(ctx: &mut codegen::CodegenContext) {
+
+    let execution_engine = ctx
+        .get_module()
+        .create_jit_execution_engine(OptimizationLevel::None)
+        .unwrap();
+
+    let mut stdin = io::stdin();
+
+    let prompt = || {
+        print!(">>> ");
+        io::stdout().flush().unwrap();
+    };
+
+    let mut reader = reader::Reader::create(&mut stdin);
+
+    prompt();
+    loop {
+        match reader.read_form() {
+            Ok(Some(form)) => {
+                ctx.reinitialize();
+                match ctx.compile_top_level(&form) {
+                    Ok(fn_name) => {
+                        // println!("Expression compiled to LLVM IR:");
+                        // ctx.get_module().print_to_stderr();
+                        execution_engine.add_module(ctx.get_module()).unwrap();
+
+                        unsafe {
+                            let f: JitFunction<unsafe extern "C" fn() -> runtime::defs::Object> =
+                                execution_engine.get_function(fn_name.as_str()).unwrap();
+                            println!("{}", f.call());
+                        }
+                    }
+                    Err(err) => {
+                        println!("compilation error: {}", err);
+                    }
+                }
+            }
+            Ok(None) => break,
+            Err(ref e) => println!("reader error: {}", e),
+        }
+        prompt();
+    }
+}
+
+
 fn main() {
     runtime::symbols::init();
     runtime::predefined::init();
@@ -27,25 +76,5 @@ fn main() {
     let ctx = Context::create();
     let mut codegen_ctx = codegen::CodegenContext::new(&ctx);
 
-    let fn_name = codegen_ctx
-        .compile_top_level(&vec![
-            read("(if 1 (set-fn (quote foo) (lambda (x y) (lambda (z p) (+ x (+ y (+ z p)))))) 2)"),
-            read("(if 2 (set-fn (quote bar) (foo 1 2)) 2)"),
-            read("(bar 3 4)"),
-            read("(if 1 (bar 3 4) 3)")
-        ])
-        .unwrap();
-
-    codegen_ctx.get_module().print_to_stderr();
-
-    let execution_engine = codegen_ctx
-        .get_module()
-        .create_jit_execution_engine(OptimizationLevel::None)
-        .unwrap();
-
-    unsafe {
-        let f: JitFunction<unsafe extern "C" fn() -> runtime::defs::Object> =
-            execution_engine.get_function(fn_name.as_str()).unwrap();
-        println!("call result: {}", f.call());
-    }
+    repl(&mut codegen_ctx);
 }

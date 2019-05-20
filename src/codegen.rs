@@ -208,12 +208,9 @@ impl<'a> CodegenContext<'a> {
         Ok(fn_name)
     }
 
-    pub fn compile_top_level(&mut self, forms: &[Form]) -> GenResult<String> {
-        let hirs = forms
-            .iter()
-            .map(|form| form_to_hir_with_transforms(form))
-            .collect::<Result<Vec<_>, _>>()?;
-        self.compile_top_level_hir(hirs.as_slice())
+    pub fn compile_top_level(&mut self, form: &Form) -> GenResult<String> {
+        let hir = form_to_hir_with_transforms(form)?;
+        self.compile_top_level_hir(&[hir])
     }
 
     fn push_env(&mut self) {
