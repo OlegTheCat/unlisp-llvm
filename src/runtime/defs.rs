@@ -83,14 +83,6 @@ impl Object {
         }
     }
 
-    pub fn unpack_nil(&self) -> *const c_void {
-        if self.ty == ObjType::Nil {
-            unsafe { self.obj.nil }
-        } else {
-            self.type_err("nil");
-        }
-    }
-
     pub fn unpack_function(&self) -> *const Function {
         if self.ty == ObjType::Function {
             unsafe { self.obj.function }
@@ -128,10 +120,12 @@ impl Object {
     }
 
     pub fn nil() -> Object {
-        Self {
-            ty: ObjType::Nil,
-            obj: UntaggedObject { nil: ptr::null() },
-        }
+        let list = List {
+            node: ptr::null_mut(),
+            len: 0
+        };
+
+        Object::from_list(Box::into_raw(Box::new(list)))
     }
 }
 

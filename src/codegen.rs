@@ -163,26 +163,26 @@ impl<'a> CodegenContext<'a> {
 
         self.enter_fn_block(&function);
 
-        let buf_ptr = self
-            .builder
-            .build_alloca(self.lookup_known_type("setjmp_buf"), "setjmp_buf");
-        let setjmp = self
-            .builder
-            .build_call(self.lookup_known_fn("setjmp"), &[buf_ptr.into()], "setjmp")
-            .try_as_basic_value()
-            .left()
-            .unwrap()
-            .into_int_value();
+        // let buf_ptr = self
+        //     .builder
+        //     .build_alloca(self.lookup_known_type("setjmp_buf"), "setjmp_buf");
+        // let setjmp = self
+        //     .builder
+        //     .build_call(self.lookup_known_fn("setjmp"), &[buf_ptr.into()], "setjmp")
+        //     .try_as_basic_value()
+        //     .left()
+        //     .unwrap()
+        //     .into_int_value();
 
-        let ok_block = self.llvm_ctx.append_basic_block(&function, "ok");
-        let err_block = self.llvm_ctx.append_basic_block(&function, "err");
+        // let ok_block = self.llvm_ctx.append_basic_block(&function, "ok");
+        // let err_block = self.llvm_ctx.append_basic_block(&function, "err");
 
-        let br = self
-            .builder
-            .build_conditional_branch(setjmp, &err_block, &ok_block);
+        // let br = self
+        //     .builder
+        //     .build_conditional_branch(setjmp, &err_block, &ok_block);
 
-        self.builder.position_at_end(&ok_block);
-        self.blocks_stack.push(Rc::new(ok_block));
+        // self.builder.position_at_end(&ok_block);
+        // self.blocks_stack.push(Rc::new(ok_block));
 
         let val = compile_hirs(self, hirs)?;
 
@@ -197,11 +197,11 @@ impl<'a> CodegenContext<'a> {
 
         self.builder.build_return(Some(&val));
 
-        self.blocks_stack.pop();
-        self.builder.position_at_end(&err_block);
-        let val = compile_hirs(self, &[HIR::Literal(Literal::IntegerLiteral(2))])?;
+        // self.blocks_stack.pop();
+        // self.builder.position_at_end(&err_block);
+        // let val = compile_hirs(self, &[HIR::Literal(Literal::IntegerLiteral(2))])?;
 
-        self.builder.build_return(Some(&val));
+        // self.builder.build_return(Some(&val));
 
         function.verify(true);
 
@@ -743,6 +743,7 @@ fn compile_if(ctx: &mut CodegenContext, if_hir: &If) -> CompileResult {
     let then_block = ctx.enter_block();
     let compiled_then = compile_hir(ctx, &if_hir.then_hir)?;
     ctx.builder.build_unconditional_branch(&merge_block);
+    let new_then_block = ctx.blocks_stack.last().cloned().unwrap();
     ctx.exit_block();
 
     let else_block = ctx.enter_block();
@@ -754,6 +755,7 @@ fn compile_if(ctx: &mut CodegenContext, if_hir: &If) -> CompileResult {
             .expect("single branch if is not supported"),
     )?;
     ctx.builder.build_unconditional_branch(&merge_block);
+    let new_else_block = ctx.blocks_stack.last().cloned().unwrap();
     ctx.exit_block();
 
     let is_nil = ctx
@@ -776,7 +778,7 @@ fn compile_if(ctx: &mut CodegenContext, if_hir: &If) -> CompileResult {
     let phi = ctx
         .builder
         .build_phi(ctx.lookup_known_type("unlisp_rt_object"), "phi");
-    phi.add_incoming(&[(&compiled_then, &then_block), (&compiled_else, &else_block)]);
+    phi.add_incoming(&[(&compiled_then, &new_then_block), (&compiled_else, &new_else_block)]);
 
     Ok(phi.as_basic_value())
 }

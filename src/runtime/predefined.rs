@@ -45,6 +45,70 @@ fn init_native_add() {
     unsafe { (*sym).function = func };
 }
 
+extern fn native_sub(_: *const Function, x: Object, y: Object) -> Object {
+    let x_int = x.unpack_int();
+    let y_int = y.unpack_int();
+
+    Object::from_int(x_int - y_int)
+}
+
+#[used]
+static NATIVE_SUB: extern fn(*const Function, Object, Object) -> Object = native_add;
+
+fn init_native_sub() {
+    let sym = symbols::get_or_intern_symbol("-".to_string());
+
+    let arglist = ["x", "y"];
+
+    let func = Function {
+        ty: FunctionType::Function,
+        name: CString::new("-").unwrap().into_raw(),
+        arglist: arr_to_raw(&arglist),
+        arg_count: 2,
+        is_macro: false,
+        invoke_f_ptr: native_sub as *const c_void,
+        apply_to_f_ptr: ptr::null()
+    };
+
+    let func = Box::into_raw(Box::new(func));
+
+    unsafe { (*sym).function = func };
+}
+
+extern fn native_int_eq(_: *const Function, x: Object, y: Object) -> Object {
+    let x_int = x.unpack_int();
+    let y_int = y.unpack_int();
+
+    if x_int == y_int {
+        x
+    } else {
+        Object::nil()
+    }
+}
+
+#[used]
+static NATIVE_INT_EQ: extern fn(*const Function, Object, Object) -> Object = native_add;
+
+fn init_native_int_eq() {
+    let sym = symbols::get_or_intern_symbol("int-eq".to_string());
+
+    let arglist = ["x", "y"];
+
+    let func = Function {
+        ty: FunctionType::Function,
+        name: CString::new("int-eq").unwrap().into_raw(),
+        arglist: arr_to_raw(&arglist),
+        arg_count: 2,
+        is_macro: false,
+        invoke_f_ptr: native_int_eq as *const c_void,
+        apply_to_f_ptr: ptr::null()
+    };
+
+    let func = Box::into_raw(Box::new(func));
+
+    unsafe { (*sym).function = func };
+}
+
 extern fn native_set_fn(_: *const Function, sym: Object, func: Object) -> Object {
     let sym = sym.unpack_symbol();
     let func = func.unpack_function();
@@ -79,5 +143,7 @@ fn init_native_set_fn() {
 
 pub fn init() {
     init_native_add();
+    init_native_sub();
+    init_native_int_eq();
     init_native_set_fn();
 }
