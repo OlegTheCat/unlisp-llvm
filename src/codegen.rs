@@ -236,7 +236,7 @@ impl<'a> CodegenContext<'a> {
         self.envs.pop();
     }
 
-    fn replace_last_block(&mut self, block: BasicBlock) -> Rc<BasicBlock> {
+    fn replace_cur_block(&mut self, block: BasicBlock) -> Rc<BasicBlock> {
         let rc = Rc::new(block);
         let idx = self.blocks_stack.len() - 1;
         self.blocks_stack[idx] = rc.clone();
@@ -244,26 +244,22 @@ impl<'a> CodegenContext<'a> {
         rc
     }
 
+    fn cur_block(&self) -> Rc<BasicBlock> {
+        self.blocks_stack.last().cloned().expect("no current block")
+    }
+
     fn append_block(&self) -> BasicBlock {
-        let last_block = self
-            .blocks_stack
-            .last()
-            .expect("cannot enter_block without function");
-        let function = last_block
+        let function = self.cur_block()
             .get_parent()
-            .expect("cannot enter_block without function");
+            .unwrap();
 
         self.llvm_ctx.append_basic_block(&function, "entry")
     }
 
     fn enter_block(&mut self) -> Rc<BasicBlock> {
-        let last_block = self
-            .blocks_stack
-            .last()
-            .expect("cannot enter_block without function");
-        let function = last_block
+        let function = self.cur_block()
             .get_parent()
-            .expect("cannot enter_block without function");
+            .unwrap();
 
         self.enter_fn_block(&function)
     }
@@ -277,10 +273,11 @@ impl<'a> CodegenContext<'a> {
         block_rc
     }
 
-    fn exit_block(&mut self) {
-        self.blocks_stack.pop();
+    fn exit_block(&mut self) -> Rc<BasicBlock> {
+        let block = self.blocks_stack.pop().expect("no block to exit");
         self.builder
             .position_at_end(self.blocks_stack.last().unwrap());
+        block
     }
 }
 
@@ -685,7 +682,7 @@ fn compile_closure(ctx: &mut CodegenContext, closure: &Closure) -> CompileResult
     Ok(object)
 }
 
-fn compile_nil_literal(ctx: &mut CodegenContext) -> BasicValueEnum {
+fn compile_nil_literal(ctx: &CodegenContext) -> BasicValueEnum {
     ctx.builder
         .build_call(ctx.lookup_known_fn("unlisp_rt_nil_object"), &[], "nil_obj")
         .try_as_basic_value()
@@ -740,23 +737,19 @@ fn compile_if(ctx: &mut CodegenContext, if_hir: &If) -> CompileResult {
 
     let compiled_cond = compile_hir(ctx, &if_hir.cond)?;
 
-    let then_block = ctx.enter_block();
+    let enter_then_block = ctx.enter_block();
     let compiled_then = compile_hir(ctx, &if_hir.then_hir)?;
     ctx.builder.build_unconditional_branch(&merge_block);
-    let new_then_block = ctx.blocks_stack.last().cloned().unwrap();
-    ctx.exit_block();
+    let exit_then_block = ctx.exit_block();
 
-    let else_block = ctx.enter_block();
-    let compiled_else = compile_hir(
-        ctx,
-        if_hir
-            .else_hir
-            .as_ref()
-            .expect("single branch if is not supported"),
-    )?;
+
+    let enter_else_block = ctx.enter_block();
+    let compiled_else = match if_hir.else_hir.as_ref() {
+        Some(hir) => compile_hir(ctx, hir)?,
+        None => compile_nil_literal(ctx)
+    };
     ctx.builder.build_unconditional_branch(&merge_block);
-    let new_else_block = ctx.blocks_stack.last().cloned().unwrap();
-    ctx.exit_block();
+    let exit_else_block = ctx.exit_block();
 
     let is_nil = ctx
         .builder
@@ -771,14 +764,14 @@ fn compile_if(ctx: &mut CodegenContext, if_hir: &If) -> CompileResult {
         .into_int_value();
 
     ctx.builder
-        .build_conditional_branch(is_nil, &else_block, &then_block);
+        .build_conditional_branch(is_nil, &enter_else_block, &enter_then_block);
 
-    ctx.replace_last_block(merge_block);
+    ctx.replace_cur_block(merge_block);
 
     let phi = ctx
         .builder
         .build_phi(ctx.lookup_known_type("unlisp_rt_object"), "phi");
-    phi.add_incoming(&[(&compiled_then, &new_then_block), (&compiled_else, &new_else_block)]);
+    phi.add_incoming(&[(&compiled_then, &exit_then_block), (&compiled_else, &exit_else_block)]);
 
     Ok(phi.as_basic_value())
 }
