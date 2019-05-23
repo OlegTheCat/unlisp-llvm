@@ -789,11 +789,13 @@ fn compile_hir(ctx: &mut CodegenContext, hir: &HIR) -> CompileResult {
 }
 
 fn compile_hirs(ctx: &mut CodegenContext, hirs: &[HIR]) -> CompileResult {
-    let mut val = None;
+    let mut val_opt = None;
 
     for hir in hirs {
-        val = Some(compile_hir(ctx, hir)?);
+        val_opt = Some(compile_hir(ctx, hir)?);
     }
 
-    Ok(val.unwrap())
+    let val_or_nil = val_opt.unwrap_or_else(|| compile_nil_literal(ctx));
+
+    Ok(val_or_nil)
 }
