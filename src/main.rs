@@ -46,14 +46,18 @@ fn repl(ctx: &mut codegen::CodegenContext) {
                 ctx.reinitialize();
                 match ctx.compile_top_level(&form) {
                     Ok(fn_name) => {
-                        println!("Expression compiled to LLVM IR:");
-                        ctx.get_module().print_to_stderr();
+                        // println!("Expression compiled to LLVM IR:");
+                        // ctx.get_module().print_to_stderr();
                         execution_engine.add_module(ctx.get_module()).unwrap();
 
                         unsafe {
                             let f: JitFunction<unsafe extern "C" fn() -> runtime::defs::Object> =
                                 execution_engine.get_function(fn_name.as_str()).unwrap();
-                            println!("{}", f.call());
+
+                            match runtime::exceptions::run_with_global_ex_handler(f) {
+                                Ok(obj) => println!("{}", obj),
+                                Err(msg) => println!("runtime error: {}", msg)
+                            }
                         }
                     }
                     Err(err) => {

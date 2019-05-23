@@ -258,7 +258,6 @@ pub fn gen_defs(ctx: &Context, module: &Module) {
     unlisp_rt_object_is_nil_gen_def(ctx, module);
     unlisp_rt_nil_object_gen_def(ctx, module);
     malloc_gen_def(ctx, module);
-    sjlj_gen_def(ctx, module);
 }
 
 fn malloc_gen_def(ctx: &Context, module: &Module) {
@@ -266,27 +265,6 @@ fn malloc_gen_def(ctx: &Context, module: &Module) {
     let i32_ty = ctx.i32_type();
     let malloc_fn_ty = i8_ptr_ty.fn_type(&[i32_ty.into()], false);
     module.add_function("malloc", malloc_fn_ty, Some(Linkage::External));
-}
-
-fn sjlj_gen_def(ctx: &Context, module: &Module) {
-    let i32_ty = ctx.i32_type();
-
-    let buf_ty = ctx.opaque_struct_type("setjmp_buf");
-    let int32_arr_ty = i32_ty.array_type(40);
-    buf_ty.set_body(&[int32_arr_ty.into()], false);
-
-    // has to be looked up through module, to avoid renaming
-    let buf_ptr_ty = module
-        .get_type("setjmp_buf")
-        .unwrap()
-        .as_struct_type()
-        .ptr_type(AddressSpace::Generic);
-    let void_ty = ctx.void_type();
-    let sj_fn_ty = i32_ty.fn_type(&[buf_ptr_ty.into()], false);
-    let lj_fn_ty = void_ty.fn_type(&[buf_ptr_ty.into(), i32_ty.into()], false);
-
-    module.add_function("setjmp", sj_fn_ty, Some(Linkage::External));
-    module.add_function("longjmp", lj_fn_ty, Some(Linkage::External));
 }
 
 #[no_mangle]

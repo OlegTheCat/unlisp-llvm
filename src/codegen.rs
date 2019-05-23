@@ -65,6 +65,7 @@ impl<'a> CodegenContext<'a> {
         let builder = llvm_ctx.create_builder();
 
         runtime::defs::gen_defs(llvm_ctx, &module);
+        runtime::exceptions::gen_defs(llvm_ctx, &module);
 
         Self {
             counter: 0,
@@ -84,6 +85,7 @@ impl<'a> CodegenContext<'a> {
             .create_module(format!("mod_{}", self.gen_unique_int()).as_str());
 
         runtime::defs::gen_defs(self.llvm_ctx, &module);
+        runtime::exceptions::gen_defs(self.llvm_ctx, &module);
 
         self.blocks_stack = vec![];
         self.module = module;
@@ -236,12 +238,11 @@ impl<'a> CodegenContext<'a> {
         self.envs.pop();
     }
 
-    fn replace_cur_block(&mut self, block: BasicBlock) -> Rc<BasicBlock> {
-        let rc = Rc::new(block);
+    fn replace_cur_block(&mut self, block: Rc<BasicBlock>) -> Rc<BasicBlock> {
         let idx = self.blocks_stack.len() - 1;
-        self.blocks_stack[idx] = rc.clone();
-        self.builder.position_at_end(&rc);
-        rc
+        self.blocks_stack[idx] = block.clone();
+        self.builder.position_at_end(&block);
+        block
     }
 
     fn cur_block(&self) -> Rc<BasicBlock> {
@@ -249,17 +250,13 @@ impl<'a> CodegenContext<'a> {
     }
 
     fn append_block(&self) -> BasicBlock {
-        let function = self.cur_block()
-            .get_parent()
-            .unwrap();
+        let function = self.cur_block().get_parent().unwrap();
 
         self.llvm_ctx.append_basic_block(&function, "entry")
     }
 
     fn enter_block(&mut self) -> Rc<BasicBlock> {
-        let function = self.cur_block()
-            .get_parent()
-            .unwrap();
+        let function = self.cur_block().get_parent().unwrap();
 
         self.enter_fn_block(&function)
     }
@@ -378,6 +375,15 @@ fn compile_call(ctx: &mut CodegenContext, call: &Call) -> CompileResult {
         .build_load(function_ptr_ptr, "fun_ptr")
         .into_pointer_value();
 
+    let args_count = call.args.len();
+
+    let params_count_ptr = unsafe {
+        ctx.builder
+            .build_struct_gep(function_ptr, 3, "arg_count_ptr")
+    };
+    let params_count = ctx.builder.build_load(params_count_ptr, "arg_count");
+
+    let enter_ok_block = ctx.enter_block();
     let invoke_ptr_ptr = unsafe { ctx.builder.build_struct_gep(function_ptr, 5, "invoke_gep") };
 
     let invoke_ptr = ctx
@@ -412,16 +418,47 @@ fn compile_call(ctx: &mut CodegenContext, call: &Call) -> CompileResult {
     compiled_args.push(function_ptr.into());
     compiled_args.reverse();
 
-    Ok(ctx
+    let invoke_result = ctx
         .builder
         .build_call(
             invoke_ptr.into_pointer_value(),
             compiled_args.as_slice(),
-            "invoke_call",
+            "invoke_result",
         )
         .try_as_basic_value()
         .left()
-        .unwrap())
+        .unwrap();
+    let exit_ok_block = ctx.exit_block();
+
+    let err_block = ctx.enter_block();
+
+    ctx.builder.build_call(
+        ctx.lookup_known_fn("raise_arity_error"),
+        &[
+            sym_name_ptr,
+            params_count.into(),
+            ctx.llvm_ctx
+                .i64_type()
+                .const_int(args_count as u64, false)
+                .into(),
+        ],
+        "raise_arity_err",
+    );
+    ctx.builder.build_unreachable();
+    ctx.exit_block();
+
+    let is_correct_arg_num = ctx.builder.build_int_compare(
+        IntPredicate::EQ,
+        ctx.llvm_ctx.i64_type().const_int(args_count as u64, false),
+        params_count.into_int_value(),
+        "arg_num_ok",
+    );
+
+    ctx.builder
+        .build_conditional_branch(is_correct_arg_num, &enter_ok_block, &err_block);
+    ctx.replace_cur_block(exit_ok_block);
+
+    Ok(invoke_result)
 }
 
 fn codegen_raw_fn(ctx: &mut CodegenContext, closure: &Closure) -> GenResult<FunctionValue> {
@@ -742,11 +779,10 @@ fn compile_if(ctx: &mut CodegenContext, if_hir: &If) -> CompileResult {
     ctx.builder.build_unconditional_branch(&merge_block);
     let exit_then_block = ctx.exit_block();
 
-
     let enter_else_block = ctx.enter_block();
     let compiled_else = match if_hir.else_hir.as_ref() {
         Some(hir) => compile_hir(ctx, hir)?,
-        None => compile_nil_literal(ctx)
+        None => compile_nil_literal(ctx),
     };
     ctx.builder.build_unconditional_branch(&merge_block);
     let exit_else_block = ctx.exit_block();
@@ -766,12 +802,15 @@ fn compile_if(ctx: &mut CodegenContext, if_hir: &If) -> CompileResult {
     ctx.builder
         .build_conditional_branch(is_nil, &enter_else_block, &enter_then_block);
 
-    ctx.replace_cur_block(merge_block);
+    ctx.replace_cur_block(Rc::new(merge_block));
 
     let phi = ctx
         .builder
         .build_phi(ctx.lookup_known_type("unlisp_rt_object"), "phi");
-    phi.add_incoming(&[(&compiled_then, &exit_then_block), (&compiled_else, &exit_else_block)]);
+    phi.add_incoming(&[
+        (&compiled_then, &exit_then_block),
+        (&compiled_else, &exit_else_block),
+    ]);
 
     Ok(phi.as_basic_value())
 }
