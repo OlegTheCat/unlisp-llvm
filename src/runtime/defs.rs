@@ -10,6 +10,7 @@ use inkwell::types::BasicType;
 use inkwell::AddressSpace;
 
 use super::symbols;
+use super::exceptions;
 
 #[repr(C)]
 pub union UntaggedObject {
@@ -17,17 +18,28 @@ pub union UntaggedObject {
     list: *mut List,
     sym: *mut Symbol,
     function: *mut Function,
-    nil: *const c_void,
 }
 
 #[derive(Clone, Eq, PartialEq)]
 #[repr(C)]
 pub enum ObjType {
-    Nil = 0,
     Int64 = 1,
     List = 2,
     Symbol = 3,
     Function = 4,
+}
+
+impl fmt::Display for ObjType {
+    fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
+        let name = match self {
+            ObjType::Int64 => "int",
+            ObjType::List => "list",
+            ObjType::Function => "function",
+            ObjType::Symbol => "symbol",
+        };
+
+        write!(f, "{}", name)
+    }
 }
 
 impl ObjType {
@@ -51,19 +63,16 @@ impl Object {
         struct_ty.set_body(&[int32_ty.into(), int8_ptr_ty.into()], false);
     }
 
-    fn type_err(&self, t_name: &str) -> ! {
-        panic!(
-            "Cannot unpack Object of type {} as {}",
-            self.ty.as_i32(),
-            t_name
-        );
+    fn type_err(&self, target_ty: ObjType) -> ! {
+        exceptions::raise_cast_error(format!("{}", self.ty), format!("{}", target_ty));
+        unreachable!()
     }
 
     pub fn unpack_int(&self) -> i64 {
         if self.ty == ObjType::Int64 {
             unsafe { self.obj.int }
         } else {
-            self.type_err("i64");
+            self.type_err(ObjType::Int64);
         }
     }
 
@@ -71,7 +80,7 @@ impl Object {
         if self.ty == ObjType::List {
             unsafe { self.obj.list }
         } else {
-            self.type_err("list");
+            self.type_err(ObjType::List);
         }
     }
 
@@ -79,7 +88,7 @@ impl Object {
         if self.ty == ObjType::Symbol {
             unsafe { self.obj.sym }
         } else {
-            self.type_err("symbol");
+            self.type_err(ObjType::Symbol);
         }
     }
 
@@ -87,7 +96,7 @@ impl Object {
         if self.ty == ObjType::Function {
             unsafe { self.obj.function }
         } else {
-            self.type_err("function");
+            self.type_err(ObjType::Function);
         }
     }
 
@@ -139,9 +148,7 @@ impl fmt::Display for Object {
             }),
             ObjType::Symbol => write!(f, "Object[symbol, {}]", unsafe {
                 CStr::from_ptr((*self.obj.sym).name).to_str().unwrap()
-            }),
-            ObjType::Nil => write!(f, "Object[nil]"),
-            _ => panic!("unsupported type"),
+            })
         }
     }
 }

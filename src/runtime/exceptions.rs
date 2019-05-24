@@ -107,3 +107,12 @@ fn raise_arity_error_gen_def(ctx: &Context, module: &Module) {
 
     module.add_function("raise_arity_error", fn_ty, Some(Linkage::External));
 }
+
+pub fn raise_cast_error(from: String, to: String) {
+    let msg = format!(
+        "cannot cast {} to {}",
+        from, to
+    );
+
+    set_msg_and_jump(msg);
+}
