@@ -51,6 +51,7 @@ fn set_msg_and_jump(msg: String) {
 pub fn gen_defs(ctx: &Context, module: &Module) {
     // sjlj_gen_def(ctx, module);
     raise_arity_error_gen_def(ctx, module);
+    raise_undef_fn_error_gen_def(ctx, module);
 }
 
 // fn sjlj_gen_def(ctx: &Context, module: &Module) {
@@ -85,8 +86,8 @@ pub extern "C" fn raise_arity_error(name: *const c_char, _expected: u64, actual:
     let msg = format!(
         "wrong number of arguments ({}) passed to {}",
         actual, name_str
-    )
-    .to_string();
+    );
+
     set_msg_and_jump(msg);
 }
 
@@ -107,6 +108,35 @@ fn raise_arity_error_gen_def(ctx: &Context, module: &Module) {
 
     module.add_function("raise_arity_error", fn_ty, Some(Linkage::External));
 }
+
+#[no_mangle]
+pub extern "C" fn raise_undef_fn_error(name: *const c_char) {
+    let name_str = unsafe { CStr::from_ptr(name).to_str().unwrap() };
+
+    let msg = format!(
+        "undefined function {}",
+        name_str
+    );
+
+    set_msg_and_jump(msg);
+}
+
+#[used]
+static RAISE_UNDEF_FN_ERROR: extern "C" fn(name: *const c_char) =
+    raise_undef_fn_error;
+
+fn raise_undef_fn_error_gen_def(ctx: &Context, module: &Module) {
+    let void_ty = ctx.void_type();
+    let fn_ty = void_ty.fn_type(
+        &[
+            ctx.i8_type().ptr_type(AddressSpace::Generic).into(),
+        ],
+        false,
+    );
+
+    module.add_function("raise_undef_fn_error", fn_ty, Some(Linkage::External));
+}
+
 
 pub fn raise_cast_error(from: String, to: String) {
     let msg = format!(

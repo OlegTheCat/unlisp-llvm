@@ -46,8 +46,8 @@ fn repl(ctx: &mut codegen::CodegenContext) {
                 ctx.reinitialize();
                 match ctx.compile_top_level(&form) {
                     Ok(fn_name) => {
-                        // println!("Expression compiled to LLVM IR:");
-                        // ctx.get_module().print_to_stderr();
+                        println!("Expression compiled to LLVM IR:");
+                        ctx.get_module().print_to_stderr();
                         execution_engine.add_module(ctx.get_module()).unwrap();
 
                         unsafe {

@@ -375,6 +375,27 @@ fn compile_call(ctx: &mut CodegenContext, call: &Call) -> CompileResult {
         .build_load(function_ptr_ptr, "fun_ptr")
         .into_pointer_value();
 
+    let f_ptr_int = ctx.builder.build_ptr_to_int(
+        function_ptr,
+        ctx.llvm_ctx.i64_type(),
+        "f_ptr_int",
+    );
+
+    let f_ptr_is_null = ctx.builder.build_int_compare(
+        IntPredicate::EQ,
+        f_ptr_int, ctx.llvm_ctx.i64_type().const_int(0, false), "f_ptr_is_null");
+
+    let no_fn_block = ctx.enter_block();
+    ctx.builder.build_call(
+        ctx.lookup_known_fn("raise_undef_fn_error"),
+        &[sym_name_ptr],
+        "raise_undef_fn",
+    );
+    ctx.builder.build_unreachable();
+    ctx.exit_block();
+
+    let fn_exists_block = ctx.enter_block();
+
     let args_count = call.args.len();
 
     let params_count_ptr = unsafe {
@@ -457,6 +478,11 @@ fn compile_call(ctx: &mut CodegenContext, call: &Call) -> CompileResult {
     ctx.builder
         .build_conditional_branch(is_correct_arg_num, &enter_ok_block, &err_block);
     ctx.replace_cur_block(exit_ok_block);
+
+    let exit_fn_exists_block = ctx.exit_block();
+    ctx.builder
+        .build_conditional_branch(f_ptr_is_null, &no_fn_block, &fn_exists_block);
+    ctx.replace_cur_block(exit_fn_exists_block);
 
     Ok(invoke_result)
 }
