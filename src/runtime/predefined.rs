@@ -1,13 +1,16 @@
 use super::defs::*;
 use super::symbols;
 
+use libc::{c_char, c_void};
+use std::ffi::CString;
 use std::mem;
 use std::ptr;
-use std::ffi::CString;
-use libc::{c_void, c_char};
 
 fn arr_to_raw(arr: &[&str]) -> *const *const c_char {
-    let vec: Vec<_> = arr.iter().map(|s| CString::new(*s).unwrap().into_raw()).collect();
+    let vec: Vec<_> = arr
+        .iter()
+        .map(|s| CString::new(*s).unwrap().into_raw())
+        .collect();
     let ptr = vec.as_ptr();
 
     mem::forget(vec);
@@ -15,67 +18,47 @@ fn arr_to_raw(arr: &[&str]) -> *const *const c_char {
     ptr as *const *const c_char
 }
 
-extern fn native_add(_: *const Function, x: Object, y: Object) -> Object {
+fn init_symbol_fn(f: *const c_void, name: &str, arglist: &[&str]) {
+    let sym = symbols::get_or_intern_symbol(name.to_string());
+
+    let func = Function {
+        ty: FunctionType::Function,
+        name: CString::new(name).unwrap().into_raw(),
+        arglist: arr_to_raw(arglist),
+        arg_count: (arglist.len() as u64),
+        is_macro: false,
+        invoke_f_ptr: f,
+        apply_to_f_ptr: ptr::null(),
+    };
+
+    let func = Box::into_raw(Box::new(func));
+
+    unsafe { (*sym).function = func };
+}
+
+extern "C" fn native_add(_: *const Function, x: Object, y: Object) -> Object {
     let x_int = x.unpack_int();
     let y_int = y.unpack_int();
 
     Object::from_int(x_int + y_int)
 }
 
-#[used]
-static NATIVE_ADD: extern fn(*const Function, Object, Object) -> Object = native_add;
-
 fn init_native_add() {
-    let sym = symbols::get_or_intern_symbol("+".to_string());
-
-    let arglist = ["x", "y"];
-
-    let func = Function {
-        ty: FunctionType::Function,
-        name: CString::new("+").unwrap().into_raw(),
-        arglist: arr_to_raw(&arglist),
-        arg_count: 2,
-        is_macro: false,
-        invoke_f_ptr: native_add as *const c_void,
-        apply_to_f_ptr: ptr::null()
-    };
-
-    let func = Box::into_raw(Box::new(func));
-
-    unsafe { (*sym).function = func };
+    init_symbol_fn(native_add as *const c_void, "+", &["x", "y"]);
 }
 
-extern fn native_sub(_: *const Function, x: Object, y: Object) -> Object {
+extern "C" fn native_sub(_: *const Function, x: Object, y: Object) -> Object {
     let x_int = x.unpack_int();
     let y_int = y.unpack_int();
 
     Object::from_int(x_int - y_int)
 }
 
-#[used]
-static NATIVE_SUB: extern fn(*const Function, Object, Object) -> Object = native_add;
-
 fn init_native_sub() {
-    let sym = symbols::get_or_intern_symbol("-".to_string());
-
-    let arglist = ["x", "y"];
-
-    let func = Function {
-        ty: FunctionType::Function,
-        name: CString::new("-").unwrap().into_raw(),
-        arglist: arr_to_raw(&arglist),
-        arg_count: 2,
-        is_macro: false,
-        invoke_f_ptr: native_sub as *const c_void,
-        apply_to_f_ptr: ptr::null()
-    };
-
-    let func = Box::into_raw(Box::new(func));
-
-    unsafe { (*sym).function = func };
+    init_symbol_fn(native_sub as *const c_void, "-", &["x", "y"]);
 }
 
-extern fn native_int_eq(_: *const Function, x: Object, y: Object) -> Object {
+extern "C" fn native_int_eq(_: *const Function, x: Object, y: Object) -> Object {
     let x_int = x.unpack_int();
     let y_int = y.unpack_int();
 
@@ -86,30 +69,11 @@ extern fn native_int_eq(_: *const Function, x: Object, y: Object) -> Object {
     }
 }
 
-#[used]
-static NATIVE_INT_EQ: extern fn(*const Function, Object, Object) -> Object = native_add;
-
 fn init_native_int_eq() {
-    let sym = symbols::get_or_intern_symbol("int-eq".to_string());
-
-    let arglist = ["x", "y"];
-
-    let func = Function {
-        ty: FunctionType::Function,
-        name: CString::new("int-eq").unwrap().into_raw(),
-        arglist: arr_to_raw(&arglist),
-        arg_count: 2,
-        is_macro: false,
-        invoke_f_ptr: native_int_eq as *const c_void,
-        apply_to_f_ptr: ptr::null()
-    };
-
-    let func = Box::into_raw(Box::new(func));
-
-    unsafe { (*sym).function = func };
+    init_symbol_fn(native_int_eq as *const c_void, "int-eq", &["x", "y"]);
 }
 
-extern fn native_set_fn(_: *const Function, sym: Object, func: Object) -> Object {
+extern "C" fn native_set_fn(_: *const Function, sym: Object, func: Object) -> Object {
     let sym = sym.unpack_symbol();
     let func = func.unpack_function();
 
@@ -118,32 +82,74 @@ extern fn native_set_fn(_: *const Function, sym: Object, func: Object) -> Object
     Object::nil()
 }
 
-#[used]
-static NATIVE_SET_FN: extern fn(*const Function, Object, Object) -> Object = native_set_fn;
-
 fn init_native_set_fn() {
-    let sym = symbols::get_or_intern_symbol("set-fn".to_string());
+    init_symbol_fn(native_set_fn as *const c_void, "set-fn", &["sym", "func"]);
+}
 
-    let arglist = ["sym", "func"];
+extern "C" fn native_cons(_: *const Function, x: Object, list: Object) -> Object {
+    let list = list.unpack_list();
+    let len = unsafe { (*list).len };
 
-    let func = Function {
-        ty: FunctionType::Function,
-        name: CString::new("set-fn").unwrap().into_raw(),
-        arglist: arr_to_raw(&arglist),
-        arg_count: 2,
-        is_macro: false,
-        invoke_f_ptr: native_set_fn as *const c_void,
-        apply_to_f_ptr: ptr::null()
+    let node = Node {
+        val: Box::into_raw(Box::new(x)),
+        next: list,
     };
 
-    let func = Box::into_raw(Box::new(func));
+    let new_list = List {
+        node: Box::into_raw(Box::new(node)),
+        len: len + 1,
+    };
 
-    unsafe { (*sym).function = func };
+    Object::from_list(Box::into_raw(Box::new(new_list)))
+}
+
+fn init_native_cons() {
+    init_symbol_fn(native_cons as *const c_void, "cons", &["x", "list"]);
+}
+
+extern "C" fn native_rest(_: *const Function, list: Object) -> Object {
+    let list = list.unpack_list();
+    let len = unsafe { (*list).len };
+
+    if len == 0 {
+        Object::nil()
+    } else {
+        let rest = unsafe {
+            (*(*list).node).next
+        };
+        Object::from_list(rest)
+    }
+}
+
+fn init_native_rest() {
+    init_symbol_fn(native_rest as *const c_void, "rest", &["list"]);
+}
+
+extern "C" fn native_first(_: *const Function, list: Object) -> Object {
+    let list = list.unpack_list();
+    let len = unsafe { (*list).len };
+
+    if len == 0 {
+        panic!("cannot do first on empty list");
+    } else {
+        unsafe {
+            (*(*(*list).node).val).clone()
+        }
+    }
+}
+
+fn init_native_first() {
+    init_symbol_fn(native_first as *const c_void, "first", &["list"]);
 }
 
 pub fn init() {
     init_native_add();
     init_native_sub();
     init_native_int_eq();
+
     init_native_set_fn();
+
+    init_native_cons();
+    init_native_rest();
+    init_native_first();
 }

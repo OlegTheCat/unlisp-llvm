@@ -12,6 +12,8 @@ use inkwell::AddressSpace;
 use super::symbols;
 use super::exceptions;
 
+// TODO: revise usage of Copy here
+#[derive(Clone, Copy)]
 #[repr(C)]
 pub union UntaggedObject {
     int: i64,
@@ -49,6 +51,7 @@ impl ObjType {
 }
 
 #[repr(C)]
+#[derive(Clone)]
 pub struct Object {
     ty: ObjType,
     obj: UntaggedObject,
@@ -155,14 +158,14 @@ impl fmt::Display for Object {
 
 #[repr(C)]
 pub struct Node {
-    val: *mut Object,
-    next: *mut List,
+    pub val: *mut Object,
+    pub next: *mut List,
 }
 
 #[repr(C)]
 pub struct List {
-    node: *mut Node,
-    len: u64,
+    pub node: *mut Node,
+    pub len: u64,
 }
 
 impl List {
@@ -215,7 +218,7 @@ pub struct Function {
     pub ty: FunctionType,
     pub name: *const c_char,
     pub arglist: *const *const c_char,
-    pub arg_count: i64,
+    pub arg_count: u64,
     pub is_macro: bool,
     pub invoke_f_ptr: *const c_void,
     pub apply_to_f_ptr: *const c_void,
