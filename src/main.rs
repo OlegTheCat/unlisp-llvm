@@ -1,4 +1,5 @@
 #![feature(untagged_unions)]
+#![feature(c_variadic)]
 
 use inkwell::context::Context;
 use inkwell::execution_engine::JitFunction;

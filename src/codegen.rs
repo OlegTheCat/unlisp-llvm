@@ -5,6 +5,7 @@ use inkwell::basic_block::BasicBlock;
 use inkwell::builder::Builder;
 use inkwell::context::Context;
 use inkwell::module::Module;
+use inkwell::passes::PassManager;
 use inkwell::types::{BasicType, BasicTypeEnum, StructType};
 use inkwell::values::{BasicValueEnum, FunctionValue, GlobalValue};
 use inkwell::{AddressSpace, IntPredicate};
@@ -42,6 +43,7 @@ impl Error for UndefinedSymbol {}
 pub struct CodegenContext<'a> {
     counter: u64,
     llvm_ctx: &'a Context,
+    pass_manager: PassManager,
     module: Module,
     builder: Builder,
     blocks_stack: Vec<Rc<BasicBlock>>,
@@ -60,6 +62,23 @@ impl<'a> CodegenContext<'a> {
         format!("{}__unlisp_{}", s.into(), self.gen_unique_int())
     }
 
+    fn make_pass_manager(module: &Module) -> PassManager {
+        let fpm = PassManager::create_for_function(module);
+
+        // fpm.add_instruction_combining_pass();
+        // fpm.add_reassociate_pass();
+        // fpm.add_gvn_pass();
+        // fpm.add_cfg_simplification_pass();
+        // fpm.add_basic_alias_analysis_pass();
+        // fpm.add_promote_memory_to_register_pass();
+        // fpm.add_instruction_combining_pass();
+        // fpm.add_reassociate_pass();
+
+        fpm.initialize();
+
+        fpm
+    }
+
     pub fn new(llvm_ctx: &'a Context) -> Self {
         let module = llvm_ctx.create_module("mod_0");
         let builder = llvm_ctx.create_builder();
@@ -70,6 +89,7 @@ impl<'a> CodegenContext<'a> {
         Self {
             counter: 0,
             llvm_ctx: llvm_ctx,
+            pass_manager: Self::make_pass_manager(&module),
             module: module,
             builder: builder,
             blocks_stack: vec![],
@@ -86,6 +106,9 @@ impl<'a> CodegenContext<'a> {
 
         runtime::defs::gen_defs(self.llvm_ctx, &module);
         runtime::exceptions::gen_defs(self.llvm_ctx, &module);
+
+        self.pass_manager.finalize();
+        self.pass_manager = Self::make_pass_manager(&module);
 
         self.blocks_stack = vec![];
         self.module = module;
@@ -205,7 +228,12 @@ impl<'a> CodegenContext<'a> {
 
         // self.builder.build_return(Some(&val));
 
-        function.verify(true);
+        if function.verify(true) {
+            self.pass_manager.run_on_function(&function);
+        } else {
+            // self.module.print_to_stderr();
+            // panic!("toplevel function verification failed");
+        }
 
         Ok(fn_name)
     }
@@ -353,6 +381,8 @@ fn compile_integer(ctx: &mut CodegenContext, i: i64) -> BasicValueEnum {
 //     res.try_as_basic_value().left().unwrap()
 // }
 
+
+
 fn compile_call(ctx: &mut CodegenContext, call: &Call) -> CompileResult {
     let sym_name_ptr = ctx.name_as_i8_ptr(call.fn_name.as_str());
 
@@ -375,15 +405,16 @@ fn compile_call(ctx: &mut CodegenContext, call: &Call) -> CompileResult {
         .build_load(function_ptr_ptr, "fun_ptr")
         .into_pointer_value();
 
-    let f_ptr_int = ctx.builder.build_ptr_to_int(
-        function_ptr,
-        ctx.llvm_ctx.i64_type(),
-        "f_ptr_int",
-    );
+    let f_ptr_int =
+        ctx.builder
+            .build_ptr_to_int(function_ptr, ctx.llvm_ctx.i64_type(), "f_ptr_int");
 
     let f_ptr_is_null = ctx.builder.build_int_compare(
         IntPredicate::EQ,
-        f_ptr_int, ctx.llvm_ctx.i64_type().const_int(0, false), "f_ptr_is_null");
+        f_ptr_int,
+        ctx.llvm_ctx.i64_type().const_int(0, false),
+        "f_ptr_is_null",
+    );
 
     let no_fn_block = ctx.enter_block();
     ctx.builder.build_call(
@@ -404,7 +435,7 @@ fn compile_call(ctx: &mut CodegenContext, call: &Call) -> CompileResult {
     };
     let params_count = ctx.builder.build_load(params_count_ptr, "arg_count");
 
-    let enter_ok_block = ctx.enter_block();
+    let enter_ok_arity_block = ctx.enter_block();
     let invoke_ptr_ptr = unsafe { ctx.builder.build_struct_gep(function_ptr, 5, "invoke_gep") };
 
     let invoke_ptr = ctx
@@ -449,9 +480,9 @@ fn compile_call(ctx: &mut CodegenContext, call: &Call) -> CompileResult {
         .try_as_basic_value()
         .left()
         .unwrap();
-    let exit_ok_block = ctx.exit_block();
+    let exit_ok_arity_block = ctx.exit_block();
 
-    let err_block = ctx.enter_block();
+    let wrong_arity_block = ctx.enter_block();
 
     ctx.builder.build_call(
         ctx.lookup_known_fn("raise_arity_error"),
@@ -468,16 +499,30 @@ fn compile_call(ctx: &mut CodegenContext, call: &Call) -> CompileResult {
     ctx.builder.build_unreachable();
     ctx.exit_block();
 
-    let is_correct_arg_num = ctx.builder.build_int_compare(
-        IntPredicate::EQ,
-        ctx.llvm_ctx.i64_type().const_int(args_count as u64, false),
-        params_count.into_int_value(),
-        "arg_num_ok",
-    );
+    let is_correct_arg_num = ctx
+        .builder
+        .build_call(
+            ctx.lookup_known_fn("unlisp_rt_check_arity"),
+            &[
+                function_ptr.into(),
+                ctx.llvm_ctx
+                    .i64_type()
+                    .const_int(args_count as u64, false)
+                    .into(),
+            ],
+            "arg_num_ok",
+        )
+        .try_as_basic_value()
+        .left()
+        .unwrap()
+        .into_int_value();
 
-    ctx.builder
-        .build_conditional_branch(is_correct_arg_num, &enter_ok_block, &err_block);
-    ctx.replace_cur_block(exit_ok_block);
+    ctx.builder.build_conditional_branch(
+        is_correct_arg_num,
+        &enter_ok_arity_block,
+        &wrong_arity_block,
+    );
+    ctx.replace_cur_block(exit_ok_arity_block);
 
     let exit_fn_exists_block = ctx.exit_block();
     ctx.builder
@@ -495,7 +540,12 @@ fn codegen_raw_fn(ctx: &mut CodegenContext, closure: &Closure) -> GenResult<Func
         .map_or("lambda", |n| n.as_str());
     let fn_name = ctx.mangle_str(fn_name);
 
-    let pars_count = closure.free_vars.len() + closure.lambda.arglist.len();
+    let mut pars_count = closure.free_vars.len() + closure.lambda.arglist.len();
+
+    if closure.lambda.restarg.is_some() {
+        pars_count += 1;
+    }
+
     let obj_struct_ty = ctx.lookup_known_type("unlisp_rt_object");
 
     let arg_tys: Vec<_> = iter::repeat(obj_struct_ty).take(pars_count).collect();
@@ -509,9 +559,12 @@ fn codegen_raw_fn(ctx: &mut CodegenContext, closure: &Closure) -> GenResult<Func
     let args_iter = closure
         .free_vars
         .iter()
-        .chain(closure.lambda.arglist.iter());
+        .chain(closure.lambda.arglist.iter())
+        .chain(closure.lambda.restarg.iter());
 
-    for (arg, arg_name) in function.get_param_iter().zip(args_iter) {
+    let param_iter = function.get_param_iter();
+
+    for (arg, arg_name) in param_iter.zip(args_iter) {
         arg.as_struct_value().set_name(arg_name);
         ctx.save_env_mapping(arg_name.clone(), arg);
     }
@@ -520,7 +573,12 @@ fn codegen_raw_fn(ctx: &mut CodegenContext, closure: &Closure) -> GenResult<Func
 
     ctx.builder.build_return(Some(&val));
 
-    function.verify(true);
+    if function.verify(true) {
+        ctx.pass_manager.run_on_function(&function);
+    } else {
+        ctx.module.print_to_stderr();
+        panic!("raw function verification failed");
+    }
 
     ctx.exit_block();
     ctx.pop_env();
@@ -549,6 +607,7 @@ fn codegen_closure_struct(ctx: &mut CodegenContext, closure: &Closure) -> Struct
     let ty_is_macro = ctx.llvm_ctx.bool_type();
     let ty_invoke_f_ptr = ctx.llvm_ctx.i8_type().ptr_type(AddressSpace::Generic);
     let ty_apply_to_f_ptr = ctx.llvm_ctx.i8_type().ptr_type(AddressSpace::Generic);
+    let ty_has_restarg = ctx.llvm_ctx.bool_type();
 
     let mut body_tys = vec![
         ty_ty.into(),
@@ -558,6 +617,7 @@ fn codegen_closure_struct(ctx: &mut CodegenContext, closure: &Closure) -> Struct
         ty_is_macro.into(),
         ty_invoke_f_ptr.into(),
         ty_apply_to_f_ptr.into(),
+        ty_has_restarg.into()
     ];
 
     let object_ty = ctx.lookup_known_type("unlisp_rt_object");
@@ -592,6 +652,11 @@ fn codegen_invoke_fn(
         .collect();
     arg_tys.push(struct_ty.ptr_type(AddressSpace::Generic).into());
     arg_tys.reverse();
+    closure
+        .lambda
+        .restarg
+        .as_ref()
+        .map(|_| arg_tys.push(obj_struct_ty));
 
     let fn_ty = obj_struct_ty.fn_type(arg_tys.as_slice(), false);
     let function = ctx.module.add_function(&fn_name, fn_ty, None);
@@ -607,13 +672,19 @@ fn codegen_invoke_fn(
     for (i, _) in closure.free_vars.iter().enumerate() {
         let arg_ptr = unsafe {
             ctx.builder
-                .build_struct_gep(struct_ptr_par, 7 + i as u32, "free_var_ptr")
+                .build_struct_gep(struct_ptr_par, 8 + i as u32, "free_var_ptr")
         };
         let arg = ctx.builder.build_load(arg_ptr, "free_var");
         raw_fn_args.push(arg);
     }
 
-    for (par, name) in par_iter.zip(closure.lambda.arglist.iter()) {
+    let args_iter = closure
+        .lambda
+        .arglist
+        .iter()
+        .chain(closure.lambda.restarg.iter());
+
+    for (par, name) in par_iter.zip(args_iter) {
         par.as_struct_value().set_name(name);
         raw_fn_args.push(par);
     }
@@ -627,7 +698,12 @@ fn codegen_invoke_fn(
 
     ctx.builder.build_return(Some(&raw_call));
 
-    function.verify(true);
+    if function.verify(true) {
+        ctx.pass_manager.run_on_function(&function);
+    } else {
+        ctx.module.print_to_stderr();
+        panic!("invoke function verification failed");
+    }
 
     ctx.exit_block();
 
@@ -710,6 +786,11 @@ fn compile_closure(ctx: &mut CodegenContext, closure: &Closure) -> CompileResult
 
     ctx.builder
         .build_store(struct_invoke_fn_ptr, invoke_fn_cast);
+
+    let struct_has_restarg_ptr = unsafe { ctx.builder.build_struct_gep(struct_ptr, 7, "has_restarg") };
+
+    ctx.builder
+        .build_store(struct_has_restarg_ptr, ctx.llvm_ctx.bool_type().const_int(closure.lambda.restarg.is_some() as u64, false));
 
     for (i, var) in closure.free_vars.iter().enumerate() {
         let var_val = ctx

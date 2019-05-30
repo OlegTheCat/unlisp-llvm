@@ -9,8 +9,8 @@ use inkwell::module::{Linkage, Module};
 use inkwell::types::BasicType;
 use inkwell::AddressSpace;
 
-use super::symbols;
 use super::exceptions;
+use super::symbols;
 
 // TODO: revise usage of Copy here
 #[derive(Clone, Copy)]
@@ -41,12 +41,6 @@ impl fmt::Display for ObjType {
         };
 
         write!(f, "{}", name)
-    }
-}
-
-impl ObjType {
-    fn as_i32(&self) -> i32 {
-        (*self).clone() as i32
     }
 }
 
@@ -134,7 +128,7 @@ impl Object {
     pub fn nil() -> Object {
         let list = List {
             node: ptr::null_mut(),
-            len: 0
+            len: 0,
         };
 
         Object::from_list(Box::into_raw(Box::new(list)))
@@ -151,7 +145,7 @@ impl fmt::Display for Object {
             }),
             ObjType::Symbol => write!(f, "Object[symbol, {}]", unsafe {
                 CStr::from_ptr((*self.obj.sym).name).to_str().unwrap()
-            })
+            }),
         }
     }
 }
@@ -208,6 +202,7 @@ impl Symbol {
 }
 
 #[repr(C)]
+#[allow(dead_code)]
 pub enum FunctionType {
     Function = 0,
     Closure = 1,
@@ -222,6 +217,7 @@ pub struct Function {
     pub is_macro: bool,
     pub invoke_f_ptr: *const c_void,
     pub apply_to_f_ptr: *const c_void,
+    pub has_restarg: bool,
 }
 
 impl Function {
@@ -238,6 +234,7 @@ impl Function {
         let ty_is_macro = context.bool_type();
         let ty_invoke_f_ptr = context.i8_type().ptr_type(AddressSpace::Generic);
         let ty_apply_to_f_ptr = context.i8_type().ptr_type(AddressSpace::Generic);
+        let ty_has_restarg = context.bool_type();
 
         fn_struct_ty.set_body(
             &[
@@ -248,6 +245,7 @@ impl Function {
                 ty_is_macro.into(),
                 ty_invoke_f_ptr.into(),
                 ty_apply_to_f_ptr.into(),
+                ty_has_restarg.into(),
             ],
             false,
         );
@@ -267,6 +265,7 @@ pub fn gen_defs(ctx: &Context, module: &Module) {
     unlisp_rt_object_from_symbol_gen_def(ctx, module);
     unlisp_rt_object_is_nil_gen_def(ctx, module);
     unlisp_rt_nil_object_gen_def(ctx, module);
+    unlisp_rt_check_arity_gen_def(ctx, module);
     malloc_gen_def(ctx, module);
 }
 
@@ -376,7 +375,6 @@ fn unlisp_rt_object_from_symbol_gen_def(_: &Context, module: &Module) {
     );
 }
 
-
 #[no_mangle]
 pub extern "C" fn unlisp_rt_object_is_nil(o: Object) -> bool {
     o.ty == ObjType::List && {
@@ -389,23 +387,17 @@ pub extern "C" fn unlisp_rt_object_is_nil(o: Object) -> bool {
 static IS_NIL: extern "C" fn(Object) -> bool = unlisp_rt_object_is_nil;
 
 fn unlisp_rt_object_is_nil_gen_def(ctx: &Context, module: &Module) {
-    let arg_ty = module
-        .get_type("unlisp_rt_object")
-        .unwrap();
+    let arg_ty = module.get_type("unlisp_rt_object").unwrap();
 
     let fn_type = ctx.bool_type().fn_type(&[arg_ty.into()], false);
-    module.add_function(
-        "unlisp_rt_object_is_nil",
-        fn_type,
-        Some(Linkage::External),
-    );
+    module.add_function("unlisp_rt_object_is_nil", fn_type, Some(Linkage::External));
 }
 
 #[no_mangle]
 pub extern "C" fn unlisp_rt_nil_object() -> Object {
     let list = List {
         node: ptr::null_mut(),
-        len: 0
+        len: 0,
     };
 
     Object::from_list(Box::into_raw(Box::new(list)))
@@ -414,15 +406,36 @@ pub extern "C" fn unlisp_rt_nil_object() -> Object {
 #[used]
 static NIL_OBJ: extern "C" fn() -> Object = unlisp_rt_nil_object;
 
-fn unlisp_rt_nil_object_gen_def(ctx: &Context, module: &Module) {
+fn unlisp_rt_nil_object_gen_def(_ctx: &Context, module: &Module) {
     let obj_ty = module
         .get_type("unlisp_rt_object")
         .unwrap();
 
     let fn_type = obj_ty.fn_type(&[], false);
-    module.add_function(
-        "unlisp_rt_nil_object",
-        fn_type,
-        Some(Linkage::External),
-    );
+    module.add_function("unlisp_rt_nil_object", fn_type, Some(Linkage::External));
+}
+
+#[no_mangle]
+pub extern "C" fn unlisp_rt_check_arity(f: *const Function, arg_count: u64) -> bool {
+    let has_restarg = unsafe { (*f).has_restarg };
+    let params_count = unsafe { (*f).arg_count };
+
+    let is_incorrect = (arg_count < params_count) || (!has_restarg && params_count != arg_count);
+
+    !is_incorrect
+}
+
+#[used]
+static CHECK_ARITY: extern "C" fn(f: *const Function, arg_count: u64) -> bool =
+    unlisp_rt_check_arity;
+
+fn unlisp_rt_check_arity_gen_def(ctx: &Context, module: &Module) {
+    let bool_ty = ctx.bool_type();
+    let fn_struct_ptr_ty = module
+        .get_type("unlisp_rt_function")
+        .unwrap()
+        .as_struct_type()
+        .ptr_type(AddressSpace::Generic);
+    let fn_ty = bool_ty.fn_type(&[fn_struct_ptr_ty.into(), ctx.i64_type().into()], false);
+    module.add_function("unlisp_rt_check_arity", fn_ty, Some(Linkage::External));
 }

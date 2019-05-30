@@ -29,6 +29,7 @@ fn init_symbol_fn(f: *const c_void, name: &str, arglist: &[&str]) {
         is_macro: false,
         invoke_f_ptr: f,
         apply_to_f_ptr: ptr::null(),
+        has_restarg: false
     };
 
     let func = Box::into_raw(Box::new(func));

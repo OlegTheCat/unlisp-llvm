@@ -39,6 +39,7 @@ pub struct LetBlock {
 pub struct Lambda {
     pub name: Option<String>,
     pub arglist: Vec<String>,
+    pub restarg: Option<String>,
     pub body: Vec<HIR>,
 }
 
@@ -212,18 +213,40 @@ fn forms_to_hir(forms: &Vec<Form>) -> Result<HIR, SyntaxError> {
                 let mut parsed_arglist;
                 let mut body;
 
-                fn parse_arglist(arglist: &Form) -> Result<Vec<String>, SyntaxError> {
+                fn parse_arglist(
+                    arglist: &Form,
+                ) -> Result<(Vec<String>, Option<String>), SyntaxError> {
                     let arglist = to_list(arglist)
                         .ok_or_else(|| SyntaxError::new("not a list in lambda arglist"))?;
 
-                    arglist
-                        .iter()
+                    let arglist = arglist
+                        .into_iter()
                         .map(|arg| {
                             to_symbol(arg)
                                 .cloned()
                                 .ok_or_else(|| SyntaxError::new("not a symbol in arglist"))
                         })
-                        .collect::<Result<Vec<_>, _>>()
+                        .collect::<Result<Vec<_>, _>>()?;
+
+                    let mut iter = arglist.into_iter();
+
+                    let simple_args = iter
+                        .by_ref()
+                        .take_while(|s| *s != "&".to_string())
+                        .collect();
+
+                    let restargs = iter.collect::<Vec<_>>();
+                    let restarg = if restargs.is_empty() {
+                        None
+                    } else {
+                        if restargs.len() != 1 {
+                            return Err(SyntaxError::new("wrong syntax near '&' in lambda"));
+                        } else {
+                            restargs.into_iter().next()
+                        }
+                    };
+
+                    Ok((simple_args, restarg))
                 }
 
                 let name_or_arglist = forms
@@ -248,9 +271,12 @@ fn forms_to_hir(forms: &Vec<Form>) -> Result<HIR, SyntaxError> {
                     _ => return Err(SyntaxError::new("not a list in lambda arglist")),
                 };
 
+                let (simple_args, restarg) = parsed_arglist;
+
                 let lambda = Lambda {
                     name: name,
-                    arglist: parsed_arglist,
+                    arglist: simple_args,
+                    restarg: restarg,
                     body: body,
                 };
 
@@ -294,10 +320,11 @@ fn literal_to_form(literal: &Literal) -> Form {
     }
 }
 
+#[allow(unused)]
 pub fn hir_to_form(hir: &HIR) -> Form {
     match hir {
         HIR::Literal(lit) => literal_to_form(lit),
-        HIR::Call(call) => unimplemented!(),
+        HIR::Call(_) => unimplemented!(),
         _ => unimplemented!(),
     }
 }
@@ -408,7 +435,9 @@ fn convert_lambda_body_item(
 }
 
 fn convert_lambda(lambda: &Lambda) -> Closure {
-    let lambda_frame = lambda.arglist.iter().map(|n| n.clone()).collect();
+    let mut lambda_frame: HashSet<_> = lambda.arglist.iter().map(|n| n.clone()).collect();
+    lambda.restarg.as_ref().map(|arg| lambda_frame.insert(arg.clone()));
+
     let mut bound_vars = vec![lambda_frame];
     let mut free_vars = HashSet::new();
 
@@ -423,6 +452,7 @@ fn convert_lambda(lambda: &Lambda) -> Closure {
         lambda: Lambda {
             name: lambda.name.clone(),
             arglist: lambda.arglist.clone(),
+            restarg: lambda.restarg.clone(),
             body: body,
         },
     }
