@@ -73,6 +73,7 @@ fn repl(ctx: &mut codegen::CodegenContext) {
     }
 }
 
+use runtime::defs::*;
 
 fn main() {
     runtime::symbols::init();

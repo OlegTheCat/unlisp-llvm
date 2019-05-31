@@ -6,6 +6,12 @@ use std::ffi::CString;
 use std::mem;
 use std::ptr;
 
+use std::ffi::VaList;
+
+extern {
+    fn va_list_to_obj_array(n: u64, list: VaList) -> *mut Object;
+}
+
 fn arr_to_raw(arr: &[&str]) -> *const *const c_char {
     let vec: Vec<_> = arr
         .iter()
@@ -18,7 +24,7 @@ fn arr_to_raw(arr: &[&str]) -> *const *const c_char {
     ptr as *const *const c_char
 }
 
-fn init_symbol_fn(f: *const c_void, name: &str, arglist: &[&str]) {
+fn init_symbol_fn(f: *const c_void, name: &str, arglist: &[&str], vararg: bool) {
     let sym = symbols::get_or_intern_symbol(name.to_string());
 
     let func = Function {
@@ -29,7 +35,7 @@ fn init_symbol_fn(f: *const c_void, name: &str, arglist: &[&str]) {
         is_macro: false,
         invoke_f_ptr: f,
         apply_to_f_ptr: ptr::null(),
-        has_restarg: false
+        has_restarg: vararg
     };
 
     let func = Box::into_raw(Box::new(func));
@@ -45,7 +51,7 @@ extern "C" fn native_add(_: *const Function, x: Object, y: Object) -> Object {
 }
 
 fn init_native_add() {
-    init_symbol_fn(native_add as *const c_void, "+", &["x", "y"]);
+    init_symbol_fn(native_add as *const c_void, "+", &["x", "y"], false);
 }
 
 extern "C" fn native_sub(_: *const Function, x: Object, y: Object) -> Object {
@@ -56,7 +62,7 @@ extern "C" fn native_sub(_: *const Function, x: Object, y: Object) -> Object {
 }
 
 fn init_native_sub() {
-    init_symbol_fn(native_sub as *const c_void, "-", &["x", "y"]);
+    init_symbol_fn(native_sub as *const c_void, "-", &["x", "y"], false);
 }
 
 extern "C" fn native_int_eq(_: *const Function, x: Object, y: Object) -> Object {
@@ -71,7 +77,7 @@ extern "C" fn native_int_eq(_: *const Function, x: Object, y: Object) -> Object 
 }
 
 fn init_native_int_eq() {
-    init_symbol_fn(native_int_eq as *const c_void, "int-eq", &["x", "y"]);
+    init_symbol_fn(native_int_eq as *const c_void, "int-eq", &["x", "y"], false);
 }
 
 extern "C" fn native_set_fn(_: *const Function, sym: Object, func: Object) -> Object {
@@ -84,7 +90,7 @@ extern "C" fn native_set_fn(_: *const Function, sym: Object, func: Object) -> Ob
 }
 
 fn init_native_set_fn() {
-    init_symbol_fn(native_set_fn as *const c_void, "set-fn", &["sym", "func"]);
+    init_symbol_fn(native_set_fn as *const c_void, "set-fn", &["sym", "func"], false);
 }
 
 extern "C" fn native_cons(_: *const Function, x: Object, list: Object) -> Object {
@@ -105,7 +111,7 @@ extern "C" fn native_cons(_: *const Function, x: Object, list: Object) -> Object
 }
 
 fn init_native_cons() {
-    init_symbol_fn(native_cons as *const c_void, "cons", &["x", "list"]);
+    init_symbol_fn(native_cons as *const c_void, "cons", &["x", "list"], false);
 }
 
 extern "C" fn native_rest(_: *const Function, list: Object) -> Object {
@@ -123,7 +129,7 @@ extern "C" fn native_rest(_: *const Function, list: Object) -> Object {
 }
 
 fn init_native_rest() {
-    init_symbol_fn(native_rest as *const c_void, "rest", &["list"]);
+    init_symbol_fn(native_rest as *const c_void, "rest", &["list"], false);
 }
 
 extern "C" fn native_first(_: *const Function, list: Object) -> Object {
@@ -140,7 +146,18 @@ extern "C" fn native_first(_: *const Function, list: Object) -> Object {
 }
 
 fn init_native_first() {
-    init_symbol_fn(native_first as *const c_void, "first", &["list"]);
+    init_symbol_fn(native_first as *const c_void, "first", &["list"], false);
+}
+
+unsafe extern fn native_add_vararg(_: *const Function, n: u64, args: ...) -> Object {
+    let args_ptr = va_list_to_obj_array(n, args);
+    let mut sum = 0;
+
+    for i in 0..n {
+        sum += (*args_ptr.offset(i as isize)).unpack_int();
+    }
+
+    Object::from_int(sum)
 }
 
 pub fn init() {
@@ -153,4 +170,6 @@ pub fn init() {
     init_native_cons();
     init_native_rest();
     init_native_first();
+
+    init_symbol_fn(native_add_vararg as *const c_void, "addv", &[], true);
 }
