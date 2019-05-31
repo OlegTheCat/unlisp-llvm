@@ -8,7 +8,7 @@ use std::ptr;
 
 use std::ffi::VaList;
 
-extern {
+extern "C" {
     fn va_list_to_obj_array(n: u64, list: VaList) -> *mut Object;
 }
 
@@ -35,7 +35,7 @@ fn init_symbol_fn(f: *const c_void, name: &str, arglist: &[&str], vararg: bool) 
         is_macro: false,
         invoke_f_ptr: f,
         apply_to_f_ptr: ptr::null(),
-        has_restarg: vararg
+        has_restarg: vararg,
     };
 
     let func = Box::into_raw(Box::new(func));
@@ -90,7 +90,12 @@ extern "C" fn native_set_fn(_: *const Function, sym: Object, func: Object) -> Ob
 }
 
 fn init_native_set_fn() {
-    init_symbol_fn(native_set_fn as *const c_void, "set-fn", &["sym", "func"], false);
+    init_symbol_fn(
+        native_set_fn as *const c_void,
+        "set-fn",
+        &["sym", "func"],
+        false,
+    );
 }
 
 extern "C" fn native_cons(_: *const Function, x: Object, list: Object) -> Object {
@@ -121,9 +126,7 @@ extern "C" fn native_rest(_: *const Function, list: Object) -> Object {
     if len == 0 {
         Object::nil()
     } else {
-        let rest = unsafe {
-            (*(*list).node).next
-        };
+        let rest = unsafe { (*(*list).node).next };
         Object::from_list(rest)
     }
 }
@@ -139,9 +142,7 @@ extern "C" fn native_first(_: *const Function, list: Object) -> Object {
     if len == 0 {
         panic!("cannot do first on empty list");
     } else {
-        unsafe {
-            (*(*(*list).node).val).clone()
-        }
+        unsafe { (*(*(*list).node).val).clone() }
     }
 }
 
@@ -149,7 +150,7 @@ fn init_native_first() {
     init_symbol_fn(native_first as *const c_void, "first", &["list"], false);
 }
 
-unsafe extern fn native_add_vararg(_: *const Function, n: u64, args: ...) -> Object {
+unsafe extern "C" fn native_add_vararg(_: *const Function, n: u64, args: ...) -> Object {
     let args_ptr = va_list_to_obj_array(n, args);
     let mut sum = 0;
 

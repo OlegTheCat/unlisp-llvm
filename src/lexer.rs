@@ -43,15 +43,14 @@ impl<'a, T: Read> Lexer<'a, T> {
 
     fn next_char(&mut self) -> io::Result<char> {
         let mut one_byte: [u8; 1] = [0];
-        self.pbr.read_exact(&mut one_byte)
-            .map_err(|e| {
-                // replace not informative 'failed to fill buffer' message
-                if e.kind() == io::ErrorKind::UnexpectedEof {
-                    io::Error::from(io::ErrorKind::UnexpectedEof)
-                } else {
-                    e
-                }
-            })?;
+        self.pbr.read_exact(&mut one_byte).map_err(|e| {
+            // replace not informative 'failed to fill buffer' message
+            if e.kind() == io::ErrorKind::UnexpectedEof {
+                io::Error::from(io::ErrorKind::UnexpectedEof)
+            } else {
+                e
+            }
+        })?;
         Ok(one_byte[0] as char)
     }
 

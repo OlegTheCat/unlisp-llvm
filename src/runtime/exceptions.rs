@@ -113,36 +113,26 @@ fn raise_arity_error_gen_def(ctx: &Context, module: &Module) {
 pub extern "C" fn raise_undef_fn_error(name: *const c_char) {
     let name_str = unsafe { CStr::from_ptr(name).to_str().unwrap() };
 
-    let msg = format!(
-        "undefined function {}",
-        name_str
-    );
+    let msg = format!("undefined function {}", name_str);
 
     set_msg_and_jump(msg);
 }
 
 #[used]
-static RAISE_UNDEF_FN_ERROR: extern "C" fn(name: *const c_char) =
-    raise_undef_fn_error;
+static RAISE_UNDEF_FN_ERROR: extern "C" fn(name: *const c_char) = raise_undef_fn_error;
 
 fn raise_undef_fn_error_gen_def(ctx: &Context, module: &Module) {
     let void_ty = ctx.void_type();
     let fn_ty = void_ty.fn_type(
-        &[
-            ctx.i8_type().ptr_type(AddressSpace::Generic).into(),
-        ],
+        &[ctx.i8_type().ptr_type(AddressSpace::Generic).into()],
         false,
     );
 
     module.add_function("raise_undef_fn_error", fn_ty, Some(Linkage::External));
 }
 
-
 pub fn raise_cast_error(from: String, to: String) {
-    let msg = format!(
-        "cannot cast {} to {}",
-        from, to
-    );
+    let msg = format!("cannot cast {} to {}", from, to);
 
     set_msg_and_jump(msg);
 }

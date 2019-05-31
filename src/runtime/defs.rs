@@ -407,9 +407,7 @@ pub extern "C" fn unlisp_rt_nil_object() -> Object {
 static NIL_OBJ: extern "C" fn() -> Object = unlisp_rt_nil_object;
 
 fn unlisp_rt_nil_object_gen_def(_ctx: &Context, module: &Module) {
-    let obj_ty = module
-        .get_type("unlisp_rt_object")
-        .unwrap();
+    let obj_ty = module.get_type("unlisp_rt_object").unwrap();
 
     let fn_type = obj_ty.fn_type(&[], false);
     module.add_function("unlisp_rt_nil_object", fn_type, Some(Linkage::External));

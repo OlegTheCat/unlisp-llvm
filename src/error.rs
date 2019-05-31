@@ -20,5 +20,4 @@ impl fmt::Display for SyntaxError {
     }
 }
 
-
 impl Error for SyntaxError {}

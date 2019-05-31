@@ -1,8 +1,7 @@
 use super::defs::Symbol;
+use libc::c_char;
 use std::collections::HashMap;
 use std::ffi::{CStr, CString};
-use libc::c_char;
-
 
 type InternedSymbols = HashMap<String, *mut Symbol>;
 

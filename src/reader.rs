@@ -4,8 +4,8 @@ use crate::lexer::Lexer;
 use crate::lexer::Token;
 use crate::repr::Form;
 use std::error::Error;
-use std::io::Read;
 use std::io;
+use std::io::Read;
 
 pub struct Reader<'a, T: Read + 'a> {
     lexer: Lexer<'a, T>,
