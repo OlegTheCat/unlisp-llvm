@@ -85,8 +85,8 @@ pub fn compile_top_level_hir(ctx: &mut CodegenContext, hirs: &[HIR]) -> GenResul
     if function.verify(true) {
         ctx.pass_manager.run_on_function(&function);
     } else {
-        // ctx.module.print_to_stderr();
-        // panic!("toplevel function verification failed");
+        ctx.get_module().print_to_stderr();
+        panic!("toplevel function verification failed");
     }
 
     Ok(fn_name)
