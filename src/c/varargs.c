@@ -15,12 +15,12 @@ struct Object {
   union UntaggedObject obj;
 };
 
-extern struct Object *va_list_to_obj_array(unsigned long long n, va_list list) {
+extern struct Object *va_list_to_obj_array(unsigned long long n, va_list *list) {
   struct Object *arr = malloc(n * sizeof(struct Object));
   unsigned long long i = 0;
 
   for (i = 0; i < n; i++) {
-    arr[i] = va_arg(list, struct Object);
+    arr[i] = va_arg(*list, struct Object);
   }
 
   return arr;

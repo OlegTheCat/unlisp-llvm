@@ -1,6 +1,7 @@
 use libc::c_char;
 use libc::c_void;
 use std::ffi::CStr;
+use std::ffi::VaList;
 use std::fmt;
 use std::ptr;
 
@@ -267,6 +268,29 @@ pub fn gen_defs(ctx: &Context, module: &Module) {
     unlisp_rt_nil_object_gen_def(ctx, module);
     unlisp_rt_check_arity_gen_def(ctx, module);
     malloc_gen_def(ctx, module);
+    va_gen_def(ctx, module);
+    unlisp_rt_va_list_into_list_gen_def(ctx, module);
+}
+
+fn va_gen_def(ctx: &Context, module: &Module) {
+    let i32_ty = ctx.i32_type();
+    let i8_ptr_ty = ctx.i8_type().ptr_type(AddressSpace::Generic);
+
+    let va_list_ty = ctx.opaque_struct_type("va_list");
+
+    va_list_ty.set_body(
+        &[
+            i32_ty.into(),
+            i32_ty.into(),
+            i8_ptr_ty.into(),
+            i8_ptr_ty.into(),
+        ],
+        false,
+    );
+
+    let va_start_end_ty = ctx.void_type().fn_type(&[i8_ptr_ty.into()], false);
+    module.add_function("llvm.va_start", va_start_end_ty, Some(Linkage::External));
+    module.add_function("llvm.va_end", va_start_end_ty, Some(Linkage::External));
 }
 
 fn malloc_gen_def(ctx: &Context, module: &Module) {
@@ -436,4 +460,52 @@ fn unlisp_rt_check_arity_gen_def(ctx: &Context, module: &Module) {
         .ptr_type(AddressSpace::Generic);
     let fn_ty = bool_ty.fn_type(&[fn_struct_ptr_ty.into(), ctx.i64_type().into()], false);
     module.add_function("unlisp_rt_check_arity", fn_ty, Some(Linkage::External));
+}
+
+extern "C" {
+    pub fn va_list_to_obj_array(n: u64, list: VaList) -> *mut Object;
+}
+
+#[no_mangle]
+pub extern "C" fn unlisp_rt_va_list_into_list(n: u64, va_list: VaList) -> Object {
+    let obj_array = unsafe { va_list_to_obj_array(n, va_list) };
+
+    let mut list = List {
+        node: ptr::null_mut(),
+        len: 0,
+    };
+
+    for i in (0..n).rev() {
+        list = List {
+            len: list.len + 1,
+            node: Box::into_raw(Box::new(Node {
+                val: unsafe { obj_array.offset(i as isize) },
+                next: Box::into_raw(Box::new(list)),
+            })),
+        }
+    }
+
+    Object::from_list(Box::into_raw(Box::new(list)))
+}
+
+#[used]
+static VALIST_TO_LIST: extern "C" fn(n: u64, va_list: VaList) -> Object =
+    unlisp_rt_va_list_into_list;
+
+fn unlisp_rt_va_list_into_list_gen_def(ctx: &Context, module: &Module) {
+    let obj_ty = module.get_type("unlisp_rt_object").unwrap();
+    let va_list_ty = module
+        .get_type("va_list")
+        .unwrap()
+        .as_struct_type()
+        .ptr_type(AddressSpace::Generic);
+    let i64_ty = ctx.i64_type();
+
+    let fn_ty = obj_ty.fn_type(&[i64_ty.into(), va_list_ty.into()], false);
+
+    module.add_function(
+        "unlisp_rt_va_list_into_list",
+        fn_ty,
+        Some(Linkage::External),
+    );
 }

@@ -1,7 +1,7 @@
 use crate::repr::Closure;
 
 use inkwell::types::{BasicType, StructType};
-use inkwell::values::FunctionValue;
+use inkwell::values::{BasicValueEnum, FunctionValue};
 use inkwell::AddressSpace;
 
 use super::common::*;
@@ -18,15 +18,15 @@ fn codegen_raw_fn(ctx: &mut CodegenContext, closure: &Closure) -> GenResult<Func
         .map_or("lambda", |n| n.as_str());
     let fn_name = ctx.mangle_str(fn_name);
 
-    let mut pars_count = closure.free_vars.len() + closure.lambda.arglist.len();
+    let mut arity = closure.free_vars.len() + closure.lambda.arglist.len();
 
     if closure.lambda.restarg.is_some() {
-        pars_count += 1;
+        arity += 1;
     }
 
     let obj_struct_ty = ctx.lookup_known_type("unlisp_rt_object");
 
-    let arg_tys: Vec<_> = iter::repeat(obj_struct_ty).take(pars_count).collect();
+    let arg_tys: Vec<_> = iter::repeat(obj_struct_ty).take(arity).collect();
 
     let fn_ty = obj_struct_ty.fn_type(arg_tys.as_slice(), false);
     let function = ctx.get_module().add_function(&fn_name, fn_ty, None);
@@ -109,6 +109,37 @@ fn codegen_closure_struct(ctx: &mut CodegenContext, closure: &Closure) -> Struct
     struct_ty
 }
 
+fn codegen_valist_into_list_conversion(
+    ctx: &mut CodegenContext,
+    n_varargs: BasicValueEnum,
+) -> BasicValueEnum {
+    let va_start = ctx.lookup_known_fn("llvm.va_start");
+    let va_end = ctx.lookup_known_fn("llvm.va_end");
+    let va_list_ty = ctx.lookup_known_type("va_list");
+
+    let va_list_ptr = ctx.builder.build_alloca(va_list_ty, "va_list_ptr");
+    let va_list_i8_ptr = ctx.builder.build_bitcast(
+        va_list_ptr,
+        ctx.llvm_ctx.i8_type().ptr_type(AddressSpace::Generic),
+        "va_list_i8_ptr",
+    );
+    ctx.builder
+        .build_call(va_start, &[va_list_i8_ptr.into()], "va_start_call");
+
+    let convert = ctx.lookup_known_fn("unlisp_rt_va_list_into_list");
+    let list = ctx
+        .builder
+        .build_call(convert, &[n_varargs, va_list_ptr.into()], "list")
+        .try_as_basic_value()
+        .left()
+        .unwrap();
+
+    ctx.builder
+        .build_call(va_end, &[va_list_i8_ptr.into()], "va_end_call");
+
+    list
+}
+
 fn codegen_invoke_fn(
     ctx: &mut CodegenContext,
     closure: &Closure,
@@ -125,18 +156,20 @@ fn codegen_invoke_fn(
 
     let obj_struct_ty = ctx.lookup_known_type("unlisp_rt_object");
 
+    let has_restarg = closure.lambda.restarg.is_some();
+
     let mut arg_tys: Vec<_> = iter::repeat(obj_struct_ty)
         .take(closure.lambda.arglist.len())
         .collect();
+
+    if has_restarg {
+        arg_tys.push(ctx.llvm_ctx.i64_type().into());
+    }
+
     arg_tys.push(struct_ty.ptr_type(AddressSpace::Generic).into());
     arg_tys.reverse();
-    closure
-        .lambda
-        .restarg
-        .as_ref()
-        .map(|_| arg_tys.push(obj_struct_ty));
 
-    let fn_ty = obj_struct_ty.fn_type(arg_tys.as_slice(), false);
+    let fn_ty = obj_struct_ty.fn_type(arg_tys.as_slice(), has_restarg);
     let function = ctx.get_module().add_function(&fn_name, fn_ty, None);
 
     ctx.enter_fn_block(&function);
@@ -144,6 +177,13 @@ fn codegen_invoke_fn(
     let mut par_iter = function.get_param_iter();
     let struct_ptr_par = par_iter.next().unwrap().into_pointer_value();
     struct_ptr_par.set_name("fn_obj");
+
+    let mut n_vararg = None;
+
+    if has_restarg {
+        n_vararg = Some(par_iter.next().unwrap());
+        n_vararg.unwrap().into_int_value().set_name("n_vararg");
+    }
 
     let mut raw_fn_args = vec![];
 
@@ -165,6 +205,10 @@ fn codegen_invoke_fn(
     for (par, name) in par_iter.zip(args_iter) {
         par.as_struct_value().set_name(name);
         raw_fn_args.push(par);
+    }
+
+    if has_restarg {
+        raw_fn_args.push(codegen_valist_into_list_conversion(ctx, n_vararg.unwrap()));
     }
 
     let raw_call = ctx

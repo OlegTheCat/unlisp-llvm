@@ -6,12 +6,6 @@ use std::ffi::CString;
 use std::mem;
 use std::ptr;
 
-use std::ffi::VaList;
-
-extern "C" {
-    fn va_list_to_obj_array(n: u64, list: VaList) -> *mut Object;
-}
-
 fn arr_to_raw(arr: &[&str]) -> *const *const c_char {
     let vec: Vec<_> = arr
         .iter()
