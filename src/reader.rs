@@ -1,4 +1,3 @@
-use crate::cons::List;
 use crate::error::SyntaxError;
 use crate::lexer::Lexer;
 use crate::lexer::Token;

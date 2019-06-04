@@ -153,9 +153,7 @@ fn codegen_invoke_fn(
         .map_or_else(|| "invoke_closure".to_string(), |n| format!("invoke_{}", n));
 
     let fn_name = ctx.mangle_str(fn_name);
-
     let obj_struct_ty = ctx.lookup_known_type("unlisp_rt_object");
-
     let has_restarg = closure.lambda.restarg.is_some();
 
     let mut arg_tys: Vec<_> = iter::repeat(obj_struct_ty)
@@ -232,10 +230,99 @@ fn codegen_invoke_fn(
     function
 }
 
+fn codegen_apply_to_fn(
+    ctx: &mut CodegenContext,
+    closure: &Closure,
+    struct_ty: StructType,
+    raw_fn: FunctionValue,
+) -> FunctionValue {
+    let fn_name = closure
+        .lambda
+        .name
+        .as_ref()
+        .map_or_else(|| "apply_closure".to_string(), |n| format!("apply_{}", n));
+    let fn_name = ctx.mangle_str(fn_name);
+    let list_ty = ctx.lookup_known_type("unlisp_rt_list");
+    let obj_struct_ty = ctx.lookup_known_type("unlisp_rt_object");
+    let has_restarg = closure.lambda.restarg.is_some();
+
+    let arg_tys: Vec<_> = vec![struct_ty.ptr_type(AddressSpace::Generic).into(), list_ty];
+
+    let fn_ty = obj_struct_ty.fn_type(arg_tys.as_slice(), has_restarg);
+    let function = ctx.get_module().add_function(&fn_name, fn_ty, None);
+
+    ctx.enter_fn_block(&function);
+
+    let struct_ptr_par = function.get_nth_param(0).unwrap().into_pointer_value();
+    struct_ptr_par.set_name("fn_obj");
+
+    let list_param = function.get_nth_param(1).unwrap();
+    list_param.as_struct_value().set_name("args");
+
+    let mut raw_fn_args = vec![];
+
+    for (i, _) in closure.free_vars.iter().enumerate() {
+        let arg_ptr = unsafe {
+            ctx.builder
+                .build_struct_gep(struct_ptr_par, 8 + i as u32, "free_var_ptr")
+        };
+        let arg = ctx.builder.build_load(arg_ptr, "free_var");
+        raw_fn_args.push(arg);
+    }
+
+    let list_first_fn = ctx.lookup_known_fn("unlisp_rt_list_first");
+    let list_rest_fn = ctx.lookup_known_fn("unlisp_rt_list_rest");
+
+    let mut cur_list = list_param;
+
+    for _ in closure.lambda.arglist.iter() {
+        let arg = ctx.builder.build_call(list_first_fn, &[cur_list], "arg")
+            .try_as_basic_value()
+            .left()
+            .unwrap();
+
+        raw_fn_args.push(arg);
+        cur_list = ctx.builder.build_call(list_rest_fn, &[cur_list], "rest")
+            .try_as_basic_value()
+            .left()
+            .unwrap();
+    }
+
+    if has_restarg {
+        let object_form_list_fn = ctx.lookup_known_fn("unlisp_rt_object_from_list");
+        let obj = ctx.builder.build_call(object_form_list_fn, &[cur_list], "restarg_object")
+            .try_as_basic_value()
+            .left()
+            .unwrap();
+        raw_fn_args.push(obj);
+    }
+
+    let raw_call = ctx
+        .builder
+        .build_call(raw_fn, raw_fn_args.as_slice(), "raw_fn_call")
+        .try_as_basic_value()
+        .left()
+        .unwrap();
+
+    ctx.builder.build_return(Some(&raw_call));
+
+    if function.verify(true) {
+        ctx.pass_manager.run_on_function(&function);
+    } else {
+        ctx.get_module().print_to_stderr();
+        panic!("apply function verification failed");
+    }
+
+    ctx.exit_block();
+
+    function
+}
+
 pub fn compile_closure(ctx: &mut CodegenContext, closure: &Closure) -> CompileResult {
     let raw_fn = codegen_raw_fn(ctx, closure)?;
     let struct_ty = codegen_closure_struct(ctx, closure);
     let invoke_fn = codegen_invoke_fn(ctx, closure, struct_ty, raw_fn);
+    let apply_to_fn = codegen_apply_to_fn(ctx, closure, struct_ty, raw_fn);
 
     let struct_ptr_ty = struct_ty.ptr_type(AddressSpace::Generic);
     let struct_ptr_null = struct_ptr_ty.const_null();
@@ -308,6 +395,17 @@ pub fn compile_closure(ctx: &mut CodegenContext, closure: &Closure) -> CompileRe
 
     ctx.builder
         .build_store(struct_invoke_fn_ptr, invoke_fn_cast);
+
+    let struct_apply_to_fn_ptr = unsafe { ctx.builder.build_struct_gep(struct_ptr, 6, "apply_to_ptr") };
+
+    let apply_to_fn_cast = ctx.builder.build_bitcast(
+        apply_to_fn.as_global_value().as_pointer_value(),
+        ctx.llvm_ctx.i8_type().ptr_type(AddressSpace::Generic),
+        "cast_apply",
+    );
+
+    ctx.builder
+        .build_store(struct_apply_to_fn_ptr, apply_to_fn_cast);
 
     let struct_has_restarg_ptr =
         unsafe { ctx.builder.build_struct_gep(struct_ptr, 7, "has_restarg") };

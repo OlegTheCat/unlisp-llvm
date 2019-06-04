@@ -10,7 +10,6 @@ use std::io;
 use std::io::{Read, Write};
 
 mod codegen;
-mod cons;
 mod error;
 mod lexer;
 mod pushback_reader;

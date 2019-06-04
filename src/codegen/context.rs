@@ -1,4 +1,3 @@
-use crate::repr::*;
 use crate::runtime;
 
 use inkwell::basic_block::BasicBlock;
@@ -6,15 +5,12 @@ use inkwell::builder::Builder;
 use inkwell::context::Context;
 use inkwell::module::Module;
 use inkwell::passes::PassManager;
-use inkwell::types::{BasicType, BasicTypeEnum};
+use inkwell::types::BasicTypeEnum;
 use inkwell::values::{BasicValueEnum, FunctionValue, GlobalValue};
 use inkwell::AddressSpace;
 use std::collections::{HashMap, HashSet};
 
-use std::error::Error;
 use std::rc::Rc;
-
-type GenResult<T> = Result<T, Box<Error>>;
 
 pub struct CodegenContext<'a> {
     pub llvm_ctx: &'a Context,

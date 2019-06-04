@@ -1,8 +1,6 @@
 use crate::error::SyntaxError;
 
 use std::collections::HashSet;
-use std::error::Error;
-use std::fmt;
 use std::iter::FromIterator;
 use std::ops::Deref;
 

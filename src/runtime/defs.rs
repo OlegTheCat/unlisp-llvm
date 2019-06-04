@@ -158,6 +158,7 @@ pub struct Node {
 }
 
 #[repr(C)]
+#[derive(Clone)]
 pub struct List {
     pub node: *mut Node,
     pub len: u64,
@@ -170,6 +171,14 @@ impl List {
         let struct_ty = context.opaque_struct_type("unlisp_rt_list");
 
         struct_ty.set_body(&[i8_ptr_ty.into(), i64_ty.into()], false);
+    }
+
+    pub unsafe fn first(&self) -> Object {
+        (*(*self.node).val).clone()
+    }
+
+    pub unsafe fn rest(&self) -> List {
+        (*(*self.node).next).clone()
     }
 }
 
@@ -264,12 +273,15 @@ pub fn gen_defs(ctx: &Context, module: &Module) {
     unlisp_rt_int_from_obj_gen_def(ctx, module);
     unlisp_rt_object_from_function_gen_def(ctx, module);
     unlisp_rt_object_from_symbol_gen_def(ctx, module);
+    unlisp_rt_object_from_list_gen_def(ctx, module);
     unlisp_rt_object_is_nil_gen_def(ctx, module);
     unlisp_rt_nil_object_gen_def(ctx, module);
     unlisp_rt_check_arity_gen_def(ctx, module);
     malloc_gen_def(ctx, module);
     va_gen_def(ctx, module);
     unlisp_rt_va_list_into_list_gen_def(ctx, module);
+    unlisp_rt_list_first_gen_def(ctx, module);
+    unlisp_rt_list_rest_gen_def(ctx, module);
 }
 
 fn va_gen_def(ctx: &Context, module: &Module) {
@@ -400,6 +412,28 @@ fn unlisp_rt_object_from_symbol_gen_def(_: &Context, module: &Module) {
 }
 
 #[no_mangle]
+pub extern "C" fn unlisp_rt_object_from_list(list: List) -> Object {
+    Object::from_list(Box::into_raw(Box::new(list)))
+}
+
+#[used]
+static OBJ_FROM_LIST: extern "C" fn(List) -> Object = unlisp_rt_object_from_list;
+
+fn unlisp_rt_object_from_list_gen_def(_: &Context, module: &Module) {
+    let arg_ty = module.get_type("unlisp_rt_list").unwrap();
+
+    let obj_struct_ty = module.get_type("unlisp_rt_object").unwrap();
+    let fn_type = obj_struct_ty.fn_type(&[arg_ty.into()], false);
+    module.add_function(
+        "unlisp_rt_object_from_list",
+        fn_type,
+        Some(Linkage::External),
+    );
+}
+
+
+
+#[no_mangle]
 pub extern "C" fn unlisp_rt_object_is_nil(o: Object) -> bool {
     o.ty == ObjType::List && {
         let list_ptr = o.unpack_list();
@@ -466,26 +500,36 @@ extern "C" {
     pub fn va_list_to_obj_array(n: u64, list: VaList) -> *mut Object;
 }
 
+pub fn obj_array_to_list(n: u64, arr: *mut Object, list: Option<*mut List>) -> *mut List {
+    let mut list = list.unwrap_or_else(
+        || {
+            Box::into_raw(
+                Box::new(
+                    List {
+                        node: ptr::null_mut(),
+                        len: 0,
+            }))
+        });
+
+    for i in (0..n).rev() {
+        list = Box::into_raw(Box::new(List {
+            len: unsafe { (*list).len } + 1,
+            node: Box::into_raw(Box::new(Node {
+                val: unsafe { arr.offset(i as isize) },
+                next: list,
+            })),
+        }))
+    }
+
+    list
+}
+
 #[no_mangle]
 pub extern "C" fn unlisp_rt_va_list_into_list(n: u64, va_list: VaList) -> Object {
     let obj_array = unsafe { va_list_to_obj_array(n, va_list) };
+    let list = obj_array_to_list(n, obj_array, None);
 
-    let mut list = List {
-        node: ptr::null_mut(),
-        len: 0,
-    };
-
-    for i in (0..n).rev() {
-        list = List {
-            len: list.len + 1,
-            node: Box::into_raw(Box::new(Node {
-                val: unsafe { obj_array.offset(i as isize) },
-                next: Box::into_raw(Box::new(list)),
-            })),
-        }
-    }
-
-    Object::from_list(Box::into_raw(Box::new(list)))
+    Object::from_list(list)
 }
 
 #[used]
@@ -505,6 +549,47 @@ fn unlisp_rt_va_list_into_list_gen_def(ctx: &Context, module: &Module) {
 
     module.add_function(
         "unlisp_rt_va_list_into_list",
+        fn_ty,
+        Some(Linkage::External),
+    );
+}
+
+#[no_mangle]
+pub unsafe extern fn unlisp_rt_list_first(list: List) -> Object {
+    list.first()
+}
+
+#[used]
+static LIST_FIRST: unsafe extern fn(List) -> Object = unlisp_rt_list_first;
+
+fn unlisp_rt_list_first_gen_def(_ctx: &Context, module: &Module) {
+    let obj_ty = module.get_type("unlisp_rt_object").unwrap();
+    let list_ty = module.get_type("unlisp_rt_list").unwrap();
+
+    let fn_ty = obj_ty.fn_type(&[list_ty], false);
+
+    module.add_function(
+        "unlisp_rt_list_first",
+        fn_ty,
+        Some(Linkage::External),
+    );
+}
+
+#[no_mangle]
+pub unsafe extern fn unlisp_rt_list_rest(list: List) -> List {
+    list.rest()
+}
+
+#[used]
+static LIST_REST: unsafe extern fn(List) -> List = unlisp_rt_list_rest;
+
+fn unlisp_rt_list_rest_gen_def(_ctx: &Context, module: &Module) {
+    let list_ty = module.get_type("unlisp_rt_list").unwrap();
+
+    let fn_ty = list_ty.fn_type(&[list_ty], false);
+
+    module.add_function(
+        "unlisp_rt_list_rest",
         fn_ty,
         Some(Linkage::External),
     );
