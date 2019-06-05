@@ -52,6 +52,23 @@ pub struct Object {
     obj: UntaggedObject,
 }
 
+impl PartialEq for Object {
+    fn eq(&self, rhs: &Self) -> bool {
+        if self.ty != rhs.ty {
+            return false;
+        }
+
+        unsafe {
+            match self.ty {
+                ObjType::Int64 => self.obj.int == rhs.obj.int,
+                ObjType::List => *self.obj.list == *rhs.obj.list,
+                ObjType::Function => self.obj.function == rhs.obj.function,
+                ObjType::Symbol => self.obj.sym == rhs.obj.sym,
+            }
+        }
+    }
+}
+
 impl Object {
     fn gen_llvm_def(context: &Context) {
         let int8_ptr_ty = context.i8_type().ptr_type(AddressSpace::Generic);
@@ -162,6 +179,22 @@ pub struct Node {
 pub struct List {
     pub node: *mut Node,
     pub len: u64,
+}
+
+impl PartialEq for List {
+    fn eq(&self, rhs: &Self) -> bool {
+        if self.len != rhs.len {
+            return false;
+        }
+
+        if self.len == 0 {
+            return true;
+        }
+
+        unsafe {
+            *((*self.node).val) == *((*rhs.node).val) && *((*self.node).next) == *((*rhs.node).next)
+        }
+    }
 }
 
 impl List {
@@ -431,8 +464,6 @@ fn unlisp_rt_object_from_list_gen_def(_: &Context, module: &Module) {
     );
 }
 
-
-
 #[no_mangle]
 pub extern "C" fn unlisp_rt_object_is_nil(o: Object) -> bool {
     o.ty == ObjType::List && {
@@ -501,15 +532,12 @@ extern "C" {
 }
 
 pub fn obj_array_to_list(n: u64, arr: *mut Object, list: Option<*mut List>) -> *mut List {
-    let mut list = list.unwrap_or_else(
-        || {
-            Box::into_raw(
-                Box::new(
-                    List {
-                        node: ptr::null_mut(),
-                        len: 0,
-            }))
-        });
+    let mut list = list.unwrap_or_else(|| {
+        Box::into_raw(Box::new(List {
+            node: ptr::null_mut(),
+            len: 0,
+        }))
+    });
 
     for i in (0..n).rev() {
         list = Box::into_raw(Box::new(List {
@@ -555,12 +583,12 @@ fn unlisp_rt_va_list_into_list_gen_def(ctx: &Context, module: &Module) {
 }
 
 #[no_mangle]
-pub unsafe extern fn unlisp_rt_list_first(list: List) -> Object {
+pub unsafe extern "C" fn unlisp_rt_list_first(list: List) -> Object {
     list.first()
 }
 
 #[used]
-static LIST_FIRST: unsafe extern fn(List) -> Object = unlisp_rt_list_first;
+static LIST_FIRST: unsafe extern "C" fn(List) -> Object = unlisp_rt_list_first;
 
 fn unlisp_rt_list_first_gen_def(_ctx: &Context, module: &Module) {
     let obj_ty = module.get_type("unlisp_rt_object").unwrap();
@@ -568,29 +596,21 @@ fn unlisp_rt_list_first_gen_def(_ctx: &Context, module: &Module) {
 
     let fn_ty = obj_ty.fn_type(&[list_ty], false);
 
-    module.add_function(
-        "unlisp_rt_list_first",
-        fn_ty,
-        Some(Linkage::External),
-    );
+    module.add_function("unlisp_rt_list_first", fn_ty, Some(Linkage::External));
 }
 
 #[no_mangle]
-pub unsafe extern fn unlisp_rt_list_rest(list: List) -> List {
+pub unsafe extern "C" fn unlisp_rt_list_rest(list: List) -> List {
     list.rest()
 }
 
 #[used]
-static LIST_REST: unsafe extern fn(List) -> List = unlisp_rt_list_rest;
+static LIST_REST: unsafe extern "C" fn(List) -> List = unlisp_rt_list_rest;
 
 fn unlisp_rt_list_rest_gen_def(_ctx: &Context, module: &Module) {
     let list_ty = module.get_type("unlisp_rt_list").unwrap();
 
     let fn_ty = list_ty.fn_type(&[list_ty], false);
 
-    module.add_function(
-        "unlisp_rt_list_rest",
-        fn_ty,
-        Some(Linkage::External),
-    );
+    module.add_function("unlisp_rt_list_rest", fn_ty, Some(Linkage::External));
 }

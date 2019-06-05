@@ -1,11 +1,10 @@
 use super::defs::*;
-use super::symbols;
 use super::exceptions;
+use super::symbols;
 
 use libc::{c_char, c_void};
 use std::ffi::CString;
 use std::mem;
-use std::ptr;
 
 fn arr_to_raw(arr: &[&str]) -> *const *const c_char {
     let vec: Vec<_> = arr
@@ -19,7 +18,13 @@ fn arr_to_raw(arr: &[&str]) -> *const *const c_char {
     ptr as *const *const c_char
 }
 
-fn init_symbol_fn(invoke_fn: *const c_void, apply_to_fn: *const c_void, name: &str, arglist: &[&str], vararg: bool) {
+fn init_symbol_fn(
+    invoke_fn: *const c_void,
+    apply_to_fn: *const c_void,
+    name: &str,
+    arglist: &[&str],
+    vararg: bool,
+) {
     let sym = symbols::get_or_intern_symbol(name.to_string());
 
     let func = Function {
@@ -29,7 +34,7 @@ fn init_symbol_fn(invoke_fn: *const c_void, apply_to_fn: *const c_void, name: &s
         arg_count: (arglist.len() as u64),
         is_macro: false,
         invoke_f_ptr: invoke_fn,
-        apply_to_f_ptr: ptr::null(),
+        apply_to_f_ptr: apply_to_fn,
         has_restarg: vararg,
     };
 
@@ -38,33 +43,65 @@ fn init_symbol_fn(invoke_fn: *const c_void, apply_to_fn: *const c_void, name: &s
     unsafe { (*sym).function = func };
 }
 
-extern "C" fn native_add_invoke(_: *const Function, x: Object, y: Object) -> Object {
-    let x_int = x.unpack_int();
-    let y_int = y.unpack_int();
+unsafe extern "C" fn native_add_invoke(_: *const Function, n: u64, args: ...) -> Object {
+    let args = va_list_to_obj_array(n, args);
+    let mut sum = 0;
 
-    Object::from_int(x_int + y_int)
+    for i in 0..n {
+        sum += (*args.offset(i as isize)).unpack_int();
+    }
+
+    Object::from_int(sum)
 }
 
-unsafe extern "C" fn native_add_apply(f: *const Function, args: List) -> Object {
-    native_add_invoke(f, args.first(), args.rest().first())
+unsafe extern "C" fn native_add_apply(_: *const Function, args: List) -> Object {
+    let mut sum = 0;
+    let args_count = args.len;
+    let mut cur_args = args;
+
+    for _ in 0..args_count {
+        sum += cur_args.first().unpack_int();
+        cur_args = cur_args.rest();
+    }
+
+    Object::from_int(sum)
 }
 
-extern "C" fn native_sub(_: *const Function, x: Object, y: Object) -> Object {
-    let x_int = x.unpack_int();
-    let y_int = y.unpack_int();
+unsafe extern "C" fn native_sub_invoke(_: *const Function, n: u64, x: Object, args: ...) -> Object {
+    let args = va_list_to_obj_array(n, args);
+    let mut result = x.unpack_int();
 
-    Object::from_int(x_int - y_int)
+    for i in 0..n {
+        result -= (*args.offset(i as isize)).unpack_int();
+    }
+
+    Object::from_int(result)
 }
 
-extern "C" fn native_int_eq(_: *const Function, x: Object, y: Object) -> Object {
-    let x_int = x.unpack_int();
-    let y_int = y.unpack_int();
+unsafe extern "C" fn native_sub_apply(_: *const Function, args: List) -> Object {
+    let mut result = args.first().unpack_int();
 
-    if x_int == y_int {
+    let mut cur_args = args.rest();
+    let args_len = cur_args.len;
+
+    for _ in 0..args_len {
+        result -= cur_args.first().unpack_int();
+        cur_args = cur_args.rest();
+    }
+
+    Object::from_int(result)
+}
+
+extern "C" fn native_equal_invoke(_: *const Function, x: Object, y: Object) -> Object {
+    if x == y {
         x
     } else {
         Object::nil()
     }
+}
+
+unsafe extern "C" fn native_equal_apply(f: *const Function, args: List) -> Object {
+    native_equal_invoke(f, args.first(), args.rest().first())
 }
 
 extern "C" fn native_set_fn_invoke(_: *const Function, sym: Object, func: Object) -> Object {
@@ -80,7 +117,7 @@ unsafe extern "C" fn native_set_fn_apply(f: *const Function, args: List) -> Obje
     native_set_fn_invoke(f, args.first(), args.rest().first())
 }
 
-extern "C" fn native_cons(_: *const Function, x: Object, list: Object) -> Object {
+extern "C" fn native_cons_invoke(_: *const Function, x: Object, list: Object) -> Object {
     let list = list.unpack_list();
     let len = unsafe { (*list).len };
 
@@ -97,7 +134,11 @@ extern "C" fn native_cons(_: *const Function, x: Object, list: Object) -> Object
     Object::from_list(Box::into_raw(Box::new(new_list)))
 }
 
-extern "C" fn native_rest(_: *const Function, list: Object) -> Object {
+unsafe extern "C" fn native_cons_apply(f: *const Function, args: List) -> Object {
+    native_cons_invoke(f, args.first(), args.rest().first())
+}
+
+extern "C" fn native_rest_invoke(_: *const Function, list: Object) -> Object {
     let list = list.unpack_list();
     let len = unsafe { (*list).len };
 
@@ -109,7 +150,11 @@ extern "C" fn native_rest(_: *const Function, list: Object) -> Object {
     }
 }
 
-extern "C" fn native_first(_: *const Function, list: Object) -> Object {
+unsafe extern "C" fn native_rest_apply(f: *const Function, args: List) -> Object {
+    native_rest_invoke(f, args.first())
+}
+
+extern "C" fn native_first_invoke(_: *const Function, list: Object) -> Object {
     let list = list.unpack_list();
     let len = unsafe { (*list).len };
 
@@ -120,15 +165,8 @@ extern "C" fn native_first(_: *const Function, list: Object) -> Object {
     }
 }
 
-unsafe extern "C" fn native_add_vararg(_: *const Function, n: u64, args: ...) -> Object {
-    let args_ptr = va_list_to_obj_array(n, args);
-    let mut sum = 0;
-
-    for i in 0..n {
-        sum += (*args_ptr.offset(i as isize)).unpack_int();
-    }
-
-    Object::from_int(sum)
+unsafe extern "C" fn native_first_apply(f: *const Function, args: List) -> Object {
+    native_first_invoke(f, args.first())
 }
 
 unsafe fn apply_to_list(f: *const Function, args: List) -> Object {
@@ -141,7 +179,12 @@ unsafe fn apply_to_list(f: *const Function, args: List) -> Object {
     apply_fn(f, args)
 }
 
-unsafe extern "C" fn native_apply_invoke(_: *const Function, n: u64, f: Object, args: ...) -> Object {
+unsafe extern "C" fn native_apply_invoke(
+    _: *const Function,
+    n: u64,
+    f: Object,
+    args: ...
+) -> Object {
     let f = f.unpack_function();
     let args_arr = va_list_to_obj_array(n, args);
     let last_arg = (*args_arr.offset((n as isize) - 1)).unpack_list();
@@ -160,11 +203,24 @@ pub fn init() {
         native_add_apply as *const c_void,
         "+",
         &["x", "y"],
-        false);
+        false,
+    );
 
+    init_symbol_fn(
+        native_sub_invoke as *const c_void,
+        native_sub_apply as *const c_void,
+        "-",
+        &["x", "y"],
+        false,
+    );
 
-    // init_symbol_fn(native_sub as *const c_void, "-", &["x", "y"], false);
-    // init_symbol_fn(native_int_eq as *const c_void, "int-eq", &["x", "y"], false);
+    init_symbol_fn(
+        native_equal_invoke as *const c_void,
+        native_equal_apply as *const c_void,
+        "equal",
+        &["x", "y"],
+        false,
+    );
 
     init_symbol_fn(
         native_set_fn_invoke as *const c_void,
@@ -174,16 +230,33 @@ pub fn init() {
         false,
     );
 
-    // init_symbol_fn(native_cons as *const c_void, "cons", &["x", "list"], false);
-    // init_symbol_fn(native_rest as *const c_void, "rest", &["list"], false);
-    // init_symbol_fn(native_first as *const c_void, "first", &["list"], false);
-
-    // init_symbol_fn(native_add_vararg as *const c_void, "addv", &[], true);
+    init_symbol_fn(
+        native_cons_invoke as *const c_void,
+        native_cons_apply as *const c_void,
+        "cons",
+        &["x", "list"],
+        false,
+    );
+    init_symbol_fn(
+        native_rest_invoke as *const c_void,
+        native_rest_apply as *const c_void,
+        "rest",
+        &["list"],
+        false,
+    );
+    init_symbol_fn(
+        native_first_invoke as *const c_void,
+        native_first_apply as *const c_void,
+        "first",
+        &["list"],
+        false,
+    );
 
     init_symbol_fn(
         native_apply_invoke as *const c_void,
         native_apply_apply as *const c_void,
         "apply",
         &["f"],
-        true);
+        true,
+    );
 }
