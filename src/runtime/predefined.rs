@@ -197,13 +197,23 @@ unsafe extern "C" fn native_apply_apply(_: *const Function, args: List) -> Objec
     apply_to_list(args.first().unpack_function(), args.rest())
 }
 
+unsafe extern fn native_symbol_fn_invoke(_: *const Function, sym: Object) -> Object {
+    let sym = sym.unpack_symbol();
+    let f = (*sym).function;
+    Object::from_function(f)
+}
+
+unsafe extern fn native_symbol_fn_apply(f: *const Function, args: List) -> Object {
+    native_symbol_fn_invoke(f, args.first())
+}
+
 pub fn init() {
     init_symbol_fn(
         native_add_invoke as *const c_void,
         native_add_apply as *const c_void,
         "+",
         &["x", "y"],
-        false,
+        true,
     );
 
     init_symbol_fn(
@@ -211,7 +221,7 @@ pub fn init() {
         native_sub_apply as *const c_void,
         "-",
         &["x", "y"],
-        false,
+        true,
     );
 
     init_symbol_fn(
@@ -227,6 +237,14 @@ pub fn init() {
         native_set_fn_apply as *const c_void,
         "set-fn",
         &["sym", "func"],
+        false,
+    );
+
+    init_symbol_fn(
+        native_symbol_fn_invoke as *const c_void,
+        native_symbol_fn_apply as *const c_void,
+        "symbol-function",
+        &["sym"],
         false,
     );
 

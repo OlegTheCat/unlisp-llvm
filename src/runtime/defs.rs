@@ -20,7 +20,7 @@ pub union UntaggedObject {
     int: i64,
     list: *mut List,
     sym: *mut Symbol,
-    function: *mut Function,
+    function: *const Function,
 }
 
 #[derive(Clone, Eq, PartialEq)]
@@ -136,7 +136,7 @@ impl Object {
         }
     }
 
-    pub fn from_function(function: *mut Function) -> Object {
+    pub fn from_function(function: *const Function) -> Object {
         Self {
             ty: ObjType::Function,
             obj: UntaggedObject { function: function },
@@ -399,12 +399,12 @@ fn unlisp_rt_int_from_obj_gen_def(ctx: &Context, module: &Module) {
 }
 
 #[no_mangle]
-pub extern "C" fn unlisp_rt_object_from_function(f: *mut Function) -> Object {
+pub extern "C" fn unlisp_rt_object_from_function(f: *const Function) -> Object {
     Object::from_function(f)
 }
 
 #[used]
-static OBJ_FROM_FN: extern "C" fn(f: *mut Function) -> Object = unlisp_rt_object_from_function;
+static OBJ_FROM_FN: extern "C" fn(f: *const Function) -> Object = unlisp_rt_object_from_function;
 
 fn unlisp_rt_object_from_function_gen_def(_: &Context, module: &Module) {
     let arg_ty = module
