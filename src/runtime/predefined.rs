@@ -212,7 +212,7 @@ pub fn init() {
         native_add_invoke as *const c_void,
         native_add_apply as *const c_void,
         "+",
-        &["x", "y"],
+        &[],
         true,
     );
 
@@ -220,7 +220,7 @@ pub fn init() {
         native_sub_invoke as *const c_void,
         native_sub_apply as *const c_void,
         "-",
-        &["x", "y"],
+        &["x"],
         true,
     );
 

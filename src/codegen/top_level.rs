@@ -9,6 +9,7 @@ use super::context::CodegenContext;
 use super::if_codegen::compile_if;
 use super::literal::{compile_literal, compile_nil_literal};
 use super::quote::compile_quoted_literal;
+use super::let_block::compile_let_block;
 
 pub fn compile_hir(ctx: &mut CodegenContext, hir: &HIR) -> CompileResult {
     match hir {
@@ -18,7 +19,7 @@ pub fn compile_hir(ctx: &mut CodegenContext, hir: &HIR) -> CompileResult {
         HIR::Lambda(_) => panic!("cannot compile raw lambda"),
         HIR::If(if_hir) => compile_if(ctx, if_hir),
         HIR::Quote(quote) => compile_quoted_literal(ctx, &quote.body),
-        _ => panic!("unsupported HIR"),
+        HIR::LetBlock(let_block) => compile_let_block(ctx, let_block)
     }
 }
 
@@ -82,12 +83,8 @@ pub fn compile_top_level_hir(ctx: &mut CodegenContext, hirs: &[HIR]) -> GenResul
 
     // ctx.builder.build_return(Some(&val));
 
-    if function.verify(true) {
-        ctx.pass_manager.run_on_function(&function);
-    } else {
-        ctx.get_module().print_to_stderr();
-        panic!("toplevel function verification failed");
-    }
+    ctx.verify_or_panic(&function, "top-level");
+    ctx.pass_manager.run_on_function(&function);
 
     Ok(fn_name)
 }

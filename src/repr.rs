@@ -31,8 +31,8 @@ define_unwrapper!(to_i64(Form :: Integer) -> i64);
 
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub struct LetBlock {
-    bindings: Vec<(String, HIR)>,
-    body: Vec<HIR>,
+    pub bindings: Vec<(String, HIR)>,
+    pub body: Vec<HIR>,
 }
 
 #[derive(Debug, PartialEq, Eq, Clone)]

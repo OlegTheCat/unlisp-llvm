@@ -51,12 +51,8 @@ fn codegen_raw_fn(ctx: &mut CodegenContext, closure: &Closure) -> GenResult<Func
 
     ctx.builder.build_return(Some(&val));
 
-    if function.verify(true) {
-        ctx.pass_manager.run_on_function(&function);
-    } else {
-        ctx.get_module().print_to_stderr();
-        panic!("raw function verification failed");
-    }
+    ctx.verify_or_panic(&function, "raw");
+    ctx.pass_manager.run_on_function(&function);
 
     ctx.exit_block();
     ctx.pop_env();
@@ -218,12 +214,8 @@ fn codegen_invoke_fn(
 
     ctx.builder.build_return(Some(&raw_call));
 
-    if function.verify(true) {
-        ctx.pass_manager.run_on_function(&function);
-    } else {
-        ctx.get_module().print_to_stderr();
-        panic!("invoke function verification failed");
-    }
+    ctx.verify_or_panic(&function, "invoke");
+    ctx.pass_manager.run_on_function(&function);
 
     ctx.exit_block();
 
@@ -306,12 +298,8 @@ fn codegen_apply_to_fn(
 
     ctx.builder.build_return(Some(&raw_call));
 
-    if function.verify(true) {
-        ctx.pass_manager.run_on_function(&function);
-    } else {
-        ctx.get_module().print_to_stderr();
-        panic!("apply function verification failed");
-    }
+    ctx.verify_or_panic(&function, "apply");
+    ctx.pass_manager.run_on_function(&function);
 
     ctx.exit_block();
 

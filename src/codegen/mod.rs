@@ -7,3 +7,4 @@ mod common;
 mod if_codegen;
 mod literal;
 mod quote;
+mod let_block;

@@ -214,4 +214,11 @@ impl<'a> CodegenContext<'a> {
             .position_at_end(self.blocks_stack.last().unwrap());
         block
     }
+
+    pub fn verify_or_panic(&self, f: &FunctionValue, tag: &str) {
+        if !f.verify(true) {
+            self.module.print_to_stderr();
+            panic!("[{}] function verification failed", tag);
+        }
+    }
 }
