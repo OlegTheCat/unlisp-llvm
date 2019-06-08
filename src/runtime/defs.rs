@@ -315,6 +315,8 @@ pub fn gen_defs(ctx: &Context, module: &Module) {
     unlisp_rt_va_list_into_list_gen_def(ctx, module);
     unlisp_rt_list_first_gen_def(ctx, module);
     unlisp_rt_list_rest_gen_def(ctx, module);
+    unlisp_rt_list_cons_gen_def(ctx, module);
+    unlisp_rt_empty_list_gen_def(ctx, module);
 }
 
 fn va_gen_def(ctx: &Context, module: &Module) {
@@ -613,4 +615,48 @@ fn unlisp_rt_list_rest_gen_def(_ctx: &Context, module: &Module) {
     let fn_ty = list_ty.fn_type(&[list_ty], false);
 
     module.add_function("unlisp_rt_list_rest", fn_ty, Some(Linkage::External));
+}
+
+
+#[no_mangle]
+pub unsafe extern "C" fn unlisp_rt_list_cons(el: Object, list: List) -> List {
+    List {
+        len: list.len + 1,
+        node: Box::into_raw(Box::new(Node {
+            val: Box::into_raw(Box::new(el)),
+            next: Box::into_raw(Box::new(list)),
+        }))
+    }
+}
+
+#[used]
+static LIST_CONS: unsafe extern "C" fn(Object, List) -> List = unlisp_rt_list_cons;
+
+fn unlisp_rt_list_cons_gen_def(_ctx: &Context, module: &Module) {
+    let obj_ty = module.get_type("unlisp_rt_object").unwrap();
+    let list_ty = module.get_type("unlisp_rt_list").unwrap();
+
+    let fn_ty = list_ty.fn_type(&[obj_ty, list_ty], false);
+
+    module.add_function("unlisp_rt_list_cons", fn_ty, Some(Linkage::External));
+}
+
+#[no_mangle]
+pub extern "C" fn unlisp_rt_empty_list() -> List {
+    let list = List {
+        node: ptr::null_mut(),
+        len: 0,
+    };
+
+    list
+}
+
+#[used]
+static EMPTY_LIST: extern "C" fn() -> List = unlisp_rt_empty_list;
+
+fn unlisp_rt_empty_list_gen_def(_ctx: &Context, module: &Module) {
+    let list_ty = module.get_type("unlisp_rt_list").unwrap();
+
+    let fn_type = list_ty.fn_type(&[], false);
+    module.add_function("unlisp_rt_empty_list", fn_type, Some(Linkage::External));
 }

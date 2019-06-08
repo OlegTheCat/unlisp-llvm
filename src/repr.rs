@@ -90,7 +90,13 @@ pub enum HIR {
 fn form_to_literal(form: &Form) -> Literal {
     match form {
         Form::Symbol(s) => Literal::SymbolLiteral(s.clone()),
-        _ => unimplemented!(),
+        Form::Integer(i) => Literal::IntegerLiteral(*i),
+        Form::String(s) => Literal::StringLiteral(s.clone()),
+        Form::T => Literal::T,
+        Form::List(list) => {
+            let literals = list.iter().map(form_to_literal).collect();
+            Literal::ListLiteral(literals)
+        }
     }
 }
 
@@ -277,10 +283,11 @@ fn forms_to_hir(forms: &Vec<Form>) -> Result<HIR, SyntaxError> {
 
 pub fn form_to_hir(form: &Form) -> Result<HIR, SyntaxError> {
     match form {
-        Form::T => Ok(HIR::Literal(Literal::T)),
-        Form::Symbol(s) => Ok(HIR::Literal(Literal::SymbolLiteral(s.to_owned()))),
-        Form::Integer(i) => Ok(HIR::Literal(Literal::IntegerLiteral(*i))),
-        Form::String(s) => Ok(HIR::Literal(Literal::StringLiteral(s.to_owned()))),
+        literal @ Form::T
+        | literal @ Form::Symbol(_)
+        | literal @ Form::Integer(_)
+        | literal @ Form::String(_) => Ok(HIR::Literal(form_to_literal(literal))),
+
         Form::List(list) => forms_to_hir(list),
     }
 }
