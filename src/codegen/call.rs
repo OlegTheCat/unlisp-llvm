@@ -224,7 +224,7 @@ fn codegen_fn_exists_block(
 }
 
 pub fn compile_call(ctx: &mut CodegenContext, call: &Call) -> CompileResult {
-    let sym_name_ptr = ctx.name_as_i8_ptr(call.fn_name.as_str());
+    let sym_name_ptr = ctx.str_literal_as_i8_ptr(call.fn_name.as_str());
 
     let intern_fn = ctx.lookup_known_fn("unlisp_rt_intern_sym");
     let interned_sym_ptr = ctx

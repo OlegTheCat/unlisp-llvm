@@ -1,5 +1,6 @@
 use libc::c_char;
 use libc::c_void;
+use libc::strcmp;
 use std::ffi::CStr;
 use std::ffi::VaList;
 use std::fmt;
@@ -21,6 +22,7 @@ pub union UntaggedObject {
     list: *mut List,
     sym: *mut Symbol,
     function: *const Function,
+    string: *const c_char,
 }
 
 #[derive(Clone, Eq, PartialEq)]
@@ -30,6 +32,7 @@ pub enum ObjType {
     List = 2,
     Symbol = 3,
     Function = 4,
+    String = 5,
 }
 
 impl fmt::Display for ObjType {
@@ -39,6 +42,7 @@ impl fmt::Display for ObjType {
             ObjType::List => "list",
             ObjType::Function => "function",
             ObjType::Symbol => "symbol",
+            ObjType::String => "string",
         };
 
         write!(f, "{}", name)
@@ -64,6 +68,7 @@ impl PartialEq for Object {
                 ObjType::List => *self.obj.list == *rhs.obj.list,
                 ObjType::Function => self.obj.function == rhs.obj.function,
                 ObjType::Symbol => self.obj.sym == rhs.obj.sym,
+                ObjType::String => strcmp(self.obj.string, rhs.obj.string) == 0
             }
         }
     }
@@ -115,6 +120,15 @@ impl Object {
         }
     }
 
+    #[allow(unused)]
+    pub fn unpack_string(&self) -> *const c_char {
+        if self.ty == ObjType::String {
+            unsafe { self.obj.string }
+        } else {
+            self.type_err(ObjType::String);
+        }
+    }
+
     pub fn from_int(i: i64) -> Object {
         Self {
             ty: ObjType::Int64,
@@ -143,6 +157,13 @@ impl Object {
         }
     }
 
+    pub fn from_string(string: *const c_char) -> Object {
+        Self {
+            ty: ObjType::String,
+            obj: UntaggedObject {string: string },
+        }
+    }
+
     pub fn nil() -> Object {
         let list = List {
             node: ptr::null_mut(),
@@ -153,18 +174,43 @@ impl Object {
     }
 }
 
+unsafe fn display_list(mut list: *const List, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
+    if (*list).len == 0 {
+        write!(f, "nil")?;
+    } else {
+        write!(f, "(")?;
+        let mut is_first = true;
+
+        while (*list).len != 0 {
+            let val = &(*(*(*list).node).val);
+            if is_first {
+                write!(f, "{}", val)?;
+                is_first = false;
+            } else {
+                write!(f, " {}", val)?;
+            }
+
+            list = (*(*list).node).next;
+        }
+
+        write!(f, ")")?;
+    }
+
+    Ok(())
+}
+
 impl fmt::Display for Object {
     fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
-        match self.ty {
-            ObjType::Int64 => write!(f, "Object[int64, {}]", unsafe { self.obj.int }),
-            ObjType::List => write!(f, "Object[list, {}]", unsafe { (*self.obj.list).len }),
-            ObjType::Function => write!(f, "Object[fn, {}]", unsafe {
-                (*self.obj.function).arg_count
-            }),
-            ObjType::Symbol => write!(f, "Object[symbol, {}]", unsafe {
-                CStr::from_ptr((*self.obj.sym).name).to_str().unwrap()
-            }),
+        unsafe {
+            match self.ty {
+                ObjType::Int64 => write!(f, "{}", self.obj.int),
+                ObjType::List => display_list(self.obj.list, f),
+                ObjType::Function => write!(f, "#<FUNCTION/{}>", (*self.obj.function).arg_count),
+                ObjType::Symbol => write!(f, "{}", CStr::from_ptr((*self.obj.sym).name).to_str().unwrap()),
+                ObjType::String => write!(f, "\"{}\"", CStr::from_ptr(self.obj.string).to_str().unwrap()),
+            }
         }
+
     }
 }
 
@@ -307,6 +353,7 @@ pub fn gen_defs(ctx: &Context, module: &Module) {
     unlisp_rt_object_from_function_gen_def(ctx, module);
     unlisp_rt_object_from_symbol_gen_def(ctx, module);
     unlisp_rt_object_from_list_gen_def(ctx, module);
+    unlisp_rt_object_from_string_gen_def(ctx, module);
     unlisp_rt_object_is_nil_gen_def(ctx, module);
     unlisp_rt_nil_object_gen_def(ctx, module);
     unlisp_rt_check_arity_gen_def(ctx, module);
@@ -380,6 +427,25 @@ fn unlisp_rt_object_from_int_gen_def(ctx: &Context, module: &Module) {
     let fn_type = obj_struct_ty.fn_type(&[arg_ty.into()], false);
     module.add_function(
         "unlisp_rt_object_from_int",
+        fn_type,
+        Some(Linkage::External),
+    );
+}
+
+#[no_mangle]
+pub extern "C" fn unlisp_rt_object_from_string(string: *const c_char) -> Object {
+    Object::from_string(string)
+}
+
+#[used]
+static OBJ_FROM_STRING: extern "C" fn(*const c_char) -> Object = unlisp_rt_object_from_string;
+
+fn unlisp_rt_object_from_string_gen_def(ctx: &Context, module: &Module) {
+    let arg_ty = ctx.i8_type().ptr_type(AddressSpace::Generic);
+    let obj_struct_ty = module.get_type("unlisp_rt_object").unwrap();
+    let fn_type = obj_struct_ty.fn_type(&[arg_ty.into()], false);
+    module.add_function(
+        "unlisp_rt_object_from_string",
         fn_type,
         Some(Linkage::External),
     );

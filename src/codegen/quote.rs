@@ -6,7 +6,7 @@ use super::context::CodegenContext;
 use super::literal::*;
 
 fn compile_quoted_symbol(ctx: &mut CodegenContext, name: &String) -> BasicValueEnum {
-    let sym_name_ptr = ctx.name_as_i8_ptr(name.as_str());
+    let sym_name_ptr = ctx.str_literal_as_i8_ptr(name.as_str());
 
     let intern_fn = ctx.lookup_known_fn("unlisp_rt_intern_sym");
     let interned_sym_ptr = ctx

@@ -24,16 +24,29 @@ pub fn compile_nil_literal(ctx: &CodegenContext) -> BasicValueEnum {
         .unwrap()
 }
 
+fn compile_string_literal(ctx: &mut CodegenContext, s: &String) -> BasicValueEnum {
+    let to_obj_fn = ctx.lookup_known_fn("unlisp_rt_object_from_string");
+    let literal_ptr = ctx.str_literal_as_i8_ptr(s.as_str());
+
+    ctx.builder
+        .build_call(to_obj_fn, &[literal_ptr.into()], "obj_from_literal")
+        .try_as_basic_value()
+        .left()
+        .unwrap()
+}
+
 pub fn compile_literal(ctx: &mut CodegenContext, literal: &Literal) -> CompileResult {
     match literal {
         Literal::ListLiteral(vec) if vec.is_empty() => Ok(compile_nil_literal(ctx)),
+        Literal::ListLiteral(_) => panic!("cannot compile unquoted list literal"),
         Literal::IntegerLiteral(i) => Ok(compile_integer(ctx, *i)),
+        Literal::StringLiteral(s) => Ok(compile_string_literal(ctx, s)),
         Literal::SymbolLiteral(s) => {
             let val = ctx
                 .lookup_name(s)
                 .ok_or_else(|| UndefinedSymbol::new(s.as_str()))?;
             Ok(val)
         }
-        _ => panic!("unsupported literal"),
+        Literal::T => panic!("t literal is not yet supported")
     }
 }

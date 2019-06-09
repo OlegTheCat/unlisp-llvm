@@ -21,8 +21,8 @@ pub struct CodegenContext<'a> {
     module: Module,
     blocks_stack: Vec<Rc<BasicBlock>>,
     envs: Vec<HashMap<String, BasicValueEnum>>,
-    defined_sym_names: HashSet<String>,
-    sym_names_globals: HashMap<String, GlobalValue>,
+    defined_str_literals: HashSet<String>,
+    str_literal_globals: HashMap<String, GlobalValue>,
 }
 
 impl<'a> CodegenContext<'a> {
@@ -67,8 +67,8 @@ impl<'a> CodegenContext<'a> {
             builder: builder,
             blocks_stack: vec![],
             envs: vec![],
-            defined_sym_names: HashSet::new(),
-            sym_names_globals: HashMap::new(),
+            defined_str_literals: HashSet::new(),
+            str_literal_globals: HashMap::new(),
         }
     }
 
@@ -85,19 +85,19 @@ impl<'a> CodegenContext<'a> {
 
         self.blocks_stack = vec![];
         self.module = module;
-        self.sym_names_globals = HashMap::new();
+        self.str_literal_globals = HashMap::new();
     }
 
-    fn declare_sym_name(&mut self, name: String) -> GlobalValue {
-        let array_ty = self.llvm_ctx.i8_type().array_type((name.len() + 1) as u32);
-        let global = self.module.add_global(array_ty, None, name.as_str());
-        self.sym_names_globals.insert(name, global.clone());
+    fn declare_str_literal(&mut self, lit: String) -> GlobalValue {
+        let array_ty = self.llvm_ctx.i8_type().array_type((lit.len() + 1) as u32);
+        let global = self.module.add_global(array_ty, None, lit.as_str());
+        self.str_literal_globals.insert(lit, global.clone());
 
         global
     }
 
-    fn define_sym_name(&mut self, name: String) -> GlobalValue {
-        let mut charcodes: Vec<_> = name.clone().chars().map(|c| c as u8).collect();
+    fn define_str_literal(&mut self, lit: String) -> GlobalValue {
+        let mut charcodes: Vec<_> = lit.clone().chars().map(|c| c as u8).collect();
         charcodes.push(0);
 
         let array_ty = self.llvm_ctx.i8_type().array_type(charcodes.len() as u32);
@@ -106,34 +106,34 @@ impl<'a> CodegenContext<'a> {
             .map(|v| self.llvm_ctx.i8_type().const_int((*v).into(), false))
             .collect();
 
-        let global = self.module.add_global(array_ty, None, name.as_str());
+        let global = self.module.add_global(array_ty, None, lit.as_str());
         global.set_initializer(&self.llvm_ctx.i8_type().const_array(array_vals.as_slice()));
 
-        self.defined_sym_names.insert(name.clone());
-        self.sym_names_globals.insert(name.clone(), global.clone());
+        self.defined_str_literals.insert(lit.clone());
+        self.str_literal_globals.insert(lit.clone(), global.clone());
 
         global
     }
 
-    pub fn get_or_globalize_sym_name(&mut self, name: impl Into<String>) -> GlobalValue {
-        let name = name.into();
-        if self.defined_sym_names.get(&name).is_some() {
-            if let Some(g_val) = self.sym_names_globals.get(&name) {
+    pub fn get_or_globalize_str_literal(&mut self, lit: impl Into<String>) -> GlobalValue {
+        let lit = lit.into();
+        if self.defined_str_literals.get(&lit).is_some() {
+            if let Some(g_val) = self.str_literal_globals.get(&lit) {
                 g_val.clone()
             } else {
-                self.declare_sym_name(name)
+                self.declare_str_literal(lit)
             }
         } else {
-            self.define_sym_name(name)
+            self.define_str_literal(lit)
         }
     }
 
-    pub fn name_as_i8_ptr(&mut self, name: impl Into<String>) -> BasicValueEnum {
-        let global = self.get_or_globalize_sym_name(name);
+    pub fn str_literal_as_i8_ptr(&mut self, lit: impl Into<String>) -> BasicValueEnum {
+        let global = self.get_or_globalize_str_literal(lit);
         self.builder.build_bitcast(
             global.as_pointer_value(),
             self.llvm_ctx.i8_type().ptr_type(AddressSpace::Generic),
-            "sym_name_to_i8_ptr",
+            "lit_as_i8_ptr",
         )
     }
 

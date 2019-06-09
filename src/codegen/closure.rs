@@ -350,7 +350,7 @@ pub fn compile_closure(ctx: &mut CodegenContext, closure: &Closure) -> CompileRe
         .name
         .as_ref()
         .map_or("lambda", |n| n.as_str());
-    let name_ptr = ctx.name_as_i8_ptr(name);
+    let name_ptr = ctx.str_literal_as_i8_ptr(name);
 
     let struct_name_ptr = unsafe { ctx.builder.build_struct_gep(struct_ptr, 1, "name_ptr") };
     ctx.builder.build_store(struct_name_ptr, name_ptr);
