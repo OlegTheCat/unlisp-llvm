@@ -310,6 +310,8 @@ pub struct Function {
 }
 
 impl Function {
+    pub const FIELDS_COUNT: u32 = 8;
+
     fn gen_llvm_def(context: &Context) {
         let fn_struct_ty = context.opaque_struct_type("unlisp_rt_function");
 

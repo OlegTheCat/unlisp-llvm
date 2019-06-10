@@ -1,4 +1,5 @@
 use crate::repr::Closure;
+use crate::runtime::defs::Function;
 
 use inkwell::types::{BasicType, StructType};
 use inkwell::values::{BasicValueEnum, FunctionValue};
@@ -182,9 +183,10 @@ fn codegen_invoke_fn(
     let mut raw_fn_args = vec![];
 
     for (i, _) in closure.free_vars.iter().enumerate() {
+
         let arg_ptr = unsafe {
             ctx.builder
-                .build_struct_gep(struct_ptr_par, 8 + i as u32, "free_var_ptr")
+                .build_struct_gep(struct_ptr_par, Function::FIELDS_COUNT + i as u32, "free_var_ptr")
         };
         let arg = ctx.builder.build_load(arg_ptr, "free_var");
         raw_fn_args.push(arg);
@@ -256,7 +258,7 @@ fn codegen_apply_to_fn(
     for (i, _) in closure.free_vars.iter().enumerate() {
         let arg_ptr = unsafe {
             ctx.builder
-                .build_struct_gep(struct_ptr_par, 8 + i as u32, "free_var_ptr")
+                .build_struct_gep(struct_ptr_par, Function::FIELDS_COUNT + i as u32, "free_var_ptr")
         };
         let arg = ctx.builder.build_load(arg_ptr, "free_var");
         raw_fn_args.push(arg);
@@ -412,7 +414,7 @@ pub fn compile_closure(ctx: &mut CodegenContext, closure: &Closure) -> CompileRe
 
         let free_var_ptr = unsafe {
             ctx.builder
-                .build_struct_gep(struct_ptr, 7 + i as u32, "free_var_ptr")
+                .build_struct_gep(struct_ptr, Function::FIELDS_COUNT + i as u32, "free_var_ptr")
         };
         ctx.builder.build_store(free_var_ptr, var_val);
     }

@@ -59,7 +59,7 @@ entry3:                                           ; preds = %entry
 }
 
 
-Object[int64, 3]
+3
 ```
 
 
@@ -69,20 +69,61 @@ Object[int64, 3]
 
 ```
 >>> 1
-Object[int64, 1]
+1
 >>> nil
-Object[list, 0]
+nil
+>>> "foo"
+"foo"
 ```
+
+### Lisp special forms
+
+```
+>>> (let ((x 1) (y x)) (+ y x))
+2
+>>> (if (equal 2 (+ 1 1)) "foo" "bar")
+"foo"
+```
+
+### Lists
+
+```
+>>> (cons 1 nil)
+(1)
+>>> (rest (list 1 2))
+(2)
+>>> (first (list 1 2))
+1
+```
+
+### Varargs
+
+```
+>>> (set-fn (quote list) (lambda (& args) args))
+nil
+>>> (list 1 2 3)
+(1 2 3)
+```
+
+### Apply
+
+```
+>>> (apply (symbol-function (quote +)) (quote (1 2)))
+3
+>>> (apply (symbol-function (quote +)) 1 2 (quote 3 4))
+10
+```
+
 
 ### Functions & closures
 
 ```
 >>> (set-fn (quote foo) (lambda (x) (lambda (y) (+ x y))))
-Object[list, 0]
+nil
 >>> (set-fn (quote bar) (foo 1))
-Object[list, 0]
+nil
 >>> (bar 2)
-Object[int64, 3]
+3
 ```
 
 ### Error reporting
@@ -90,11 +131,17 @@ Object[int64, 3]
 ```
 >>> x
 compilation error: undefined symbol x
+
 >>> (set-fn (quote x) (lambda (y)))
-Object[list, 0]
+nil
+
 >>> (x 1 2)
 runtime error: wrong number of arguments (2) passed to x
+
 >>> (+ 1 (quote x))
 runtime error: cannot cast symbol to int
-```
+
+>>> (undefined-fn 1 2 3)
+runtime error: undefined function undefined-fn
+
 ```
