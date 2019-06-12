@@ -306,12 +306,96 @@ fn literal_to_form(literal: &Literal) -> Form {
     }
 }
 
+fn call_to_form(call: &Call) -> Form {
+    let head_form = Form::Symbol(call.fn_name.clone());
+    let mut arg_forms: Vec<_> = call.args.iter().map(hir_to_form).collect();
+
+    arg_forms.reverse();
+    arg_forms.push(head_form);
+    arg_forms.reverse();
+
+    Form::List(arg_forms)
+}
+
+fn let_block_to_form(let_block: &LetBlock) -> Form {
+    let mut let_form = vec![];
+    let_form.push(Form::Symbol("let".to_string()));
+
+    let mut bindings_form = vec![];
+
+    for (var, val) in let_block.bindings.iter() {
+        let mut binding_form = vec![];
+        binding_form.push(Form::Symbol(var.to_string()));
+        binding_form.push(hir_to_form(val));
+
+        bindings_form.push(Form::List(binding_form));
+    }
+
+    let_form.push(Form::List(bindings_form));
+
+    for body_item in let_block.body.iter() {
+        let_form.push(hir_to_form(body_item));
+    }
+
+    Form::List(let_form)
+}
+
+fn lambda_to_form(lambda: &Lambda) -> Form {
+    let mut lambda_form = vec![];
+    lambda_form.push(Form::Symbol("lambda".to_string()));
+
+    let mut arglist_form: Vec<_> = lambda
+        .arglist
+        .iter()
+        .map(|arg| Form::Symbol(arg.to_string()))
+        .collect();
+
+    if let Some(arg) = &lambda.restarg {
+        arglist_form.push(Form::Symbol("&".to_string()));
+        arglist_form.push(Form::Symbol(arg.to_string()));
+    }
+
+    lambda_form.push(Form::List(arglist_form));
+
+    for body_item in lambda.body.iter() {
+        lambda_form.push(hir_to_form(body_item));
+    }
+
+    Form::List(lambda_form)
+}
+
+fn if_to_form(if_hir: &If) -> Form {
+    let mut if_form = vec![];
+
+    if_form.push(Form::Symbol("if".to_string()));
+
+    if_form.push(hir_to_form(&if_hir.cond));
+    if_form.push(hir_to_form(&if_hir.then_hir));
+
+    if let Some(hir) = &if_hir.else_hir {
+        if_form.push(hir_to_form(hir));
+    }
+
+    Form::List(if_form)
+}
+
+fn quote_to_form(quote: &Quote) -> Form {
+    Form::List(vec![
+        Form::Symbol("quote".to_string()),
+        literal_to_form(&quote.body),
+    ])
+}
+
 #[allow(unused)]
 pub fn hir_to_form(hir: &HIR) -> Form {
     match hir {
         HIR::Literal(lit) => literal_to_form(lit),
-        HIR::Call(_) => unimplemented!(),
-        _ => unimplemented!(),
+        HIR::Call(call) => call_to_form(call),
+        HIR::LetBlock(let_block) => let_block_to_form(let_block),
+        HIR::Lambda(lambda) => lambda_to_form(lambda),
+        HIR::Closure(closure) => lambda_to_form(&closure.lambda),
+        HIR::If(if_hir) => if_to_form(if_hir),
+        HIR::Quote(quote) => quote_to_form(quote),
     }
 }
 
