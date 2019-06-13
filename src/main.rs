@@ -22,7 +22,7 @@ use codegen::top_level::compile_top_level_hir;
 
 fn read_and_parse<'a, T: Read>(
     reader: &mut reader::Reader<'a, T>,
-) -> Result<Option<repr::HIR>, Box<Error>> {
+) -> Result<Option<repr::HIR>, Box<dyn Error>> {
     let form = reader.read_form()?;
     Ok(form
         .as_ref()
@@ -60,9 +60,9 @@ fn repl(ctx: &mut CodegenContext) {
                             let f: JitFunction<unsafe extern "C" fn() -> runtime::defs::Object> =
                                 execution_engine.get_function(fn_name.as_str()).unwrap();
 
-                            match runtime::exceptions::run_with_global_ex_handler(f) {
+                            match runtime::exceptions::run_with_global_ex_handler(|| f.call()) {
                                 Ok(obj) => println!("{}", obj),
-                                Err(msg) => println!("runtime error: {}", msg),
+                                Err(err) => println!("runtime error: {}", err),
                             }
                         }
                     }

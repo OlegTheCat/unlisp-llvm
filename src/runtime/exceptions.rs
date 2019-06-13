@@ -5,10 +5,11 @@ use std::ptr;
 use super::defs::Object;
 
 use inkwell::context::Context;
-use inkwell::execution_engine::JitFunction;
 use inkwell::module::{Linkage, Module};
 use inkwell::AddressSpace;
 use libc::c_char;
+
+use crate::error::RuntimeError;
 
 const JMP_BUF_WIDTH: usize = mem::size_of::<u32>() * 40;
 
@@ -31,13 +32,11 @@ extern "C" {
     fn longjmp(buf: *const i8);
 }
 
-pub unsafe fn run_with_global_ex_handler(
-    f: JitFunction<unsafe extern "C" fn() -> Object>,
-) -> Result<Object, String> {
+pub unsafe fn run_with_global_ex_handler<F: FnOnce() -> Object>(f: F) -> Result<Object, RuntimeError> {
     if setjmp(glob_jmp_buf_ptr()) == 0 {
-        Ok(f.call())
+        Ok(f())
     } else {
-        Err((*(ERR_MSG_PTR as *mut String)).clone())
+        Err(RuntimeError::new((*(ERR_MSG_PTR as *mut String)).clone()))
     }
 }
 

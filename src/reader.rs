@@ -17,7 +17,7 @@ impl<'a, T: Read + 'a> Reader<'a, T> {
         }
     }
 
-    fn next_tok_or_eof(&mut self) -> Result<Token, Box<Error>> {
+    fn next_tok_or_eof(&mut self) -> Result<Token, Box<dyn Error>> {
         let tok = self.lexer.next_token()?;
         tok.ok_or(Box::new(io::Error::from(io::ErrorKind::UnexpectedEof)))
     }
@@ -33,7 +33,7 @@ impl<'a, T: Read + 'a> Reader<'a, T> {
         }
     }
 
-    fn read_list_form(&mut self) -> Result<Form, Box<Error>> {
+    fn read_list_form(&mut self) -> Result<Form, Box<dyn Error>> {
         let mut vec = Vec::new();
 
         let mut tok = self.next_tok_or_eof()?;
@@ -58,7 +58,7 @@ impl<'a, T: Read + 'a> Reader<'a, T> {
         Ok(Form::List(vec))
     }
 
-    pub fn read_form(&mut self) -> Result<Option<Form>, Box<Error>> {
+    pub fn read_form(&mut self) -> Result<Option<Form>, Box<dyn Error>> {
         let tok = self.lexer.next_token()?;
 
         if tok.is_none() {

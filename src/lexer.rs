@@ -4,7 +4,7 @@ use std::error::Error;
 use std::io;
 use std::io::Read;
 
-type GenResult<T> = Result<T, Box<Error>>;
+type GenResult<T> = Result<T, Box<dyn Error>>;
 
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub enum Token {

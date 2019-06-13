@@ -165,10 +165,7 @@ impl Object {
     }
 
     pub fn nil() -> Object {
-        let list = List {
-            node: ptr::null_mut(),
-            len: 0,
-        };
+        let list = List::empty();
 
         Object::from_list(Box::into_raw(Box::new(list)))
     }
@@ -252,12 +249,29 @@ impl List {
         struct_ty.set_body(&[i8_ptr_ty.into(), i64_ty.into()], false);
     }
 
+    pub fn empty() -> List {
+        List {
+            node: ptr::null_mut(),
+            len: 0,
+        }
+    }
+
     pub unsafe fn first(&self) -> Object {
         (*(*self.node).val).clone()
     }
 
     pub unsafe fn rest(&self) -> List {
         (*(*self.node).next).clone()
+    }
+
+    pub fn cons(&self, obj: Object) -> List {
+        List {
+            len: self.len + 1,
+            node: Box::into_raw(Box::new(Node {
+                val: Box::into_raw(Box::new(obj)),
+                next: Box::into_raw(Box::new(self.clone())),
+            }))
+        }
     }
 }
 
@@ -688,13 +702,7 @@ fn unlisp_rt_list_rest_gen_def(_ctx: &Context, module: &Module) {
 
 #[no_mangle]
 pub unsafe extern "C" fn unlisp_rt_list_cons(el: Object, list: List) -> List {
-    List {
-        len: list.len + 1,
-        node: Box::into_raw(Box::new(Node {
-            val: Box::into_raw(Box::new(el)),
-            next: Box::into_raw(Box::new(list)),
-        }))
-    }
+    list.cons(el)
 }
 
 #[used]
