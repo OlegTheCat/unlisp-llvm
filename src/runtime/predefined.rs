@@ -194,7 +194,24 @@ unsafe extern "C" fn native_apply_invoke(
 }
 
 unsafe extern "C" fn native_apply_apply(_: *const Function, args: List) -> Object {
-    apply_to_list(args.first().unpack_function(), args.rest())
+    let f = args.first().unpack_function();
+
+    let mut to_cons = vec![];
+    let mut f_args = args.rest();
+
+    while f_args.len != 1 {
+        to_cons.push(f_args.first());
+        f_args = f_args.rest();
+    }
+
+    let cons_base = f_args.first().unpack_list();
+
+    let reconsed_args = to_cons
+        .into_iter()
+        .rev()
+        .fold((*cons_base).clone(), |acc, item| acc.cons(item));
+
+    apply_to_list(f, reconsed_args)
 }
 
 unsafe extern "C" fn native_symbol_fn_invoke(_: *const Function, sym: Object) -> Object {
