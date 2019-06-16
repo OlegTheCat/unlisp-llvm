@@ -5,6 +5,6 @@ mod call;
 mod closure;
 mod common;
 mod if_codegen;
+mod let_block;
 mod literal;
 mod quote;
-mod let_block;

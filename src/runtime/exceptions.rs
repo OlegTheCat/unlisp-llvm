@@ -32,7 +32,9 @@ extern "C" {
     fn longjmp(buf: *const i8);
 }
 
-pub unsafe fn run_with_global_ex_handler<F: FnOnce() -> Object>(f: F) -> Result<Object, RuntimeError> {
+pub unsafe fn run_with_global_ex_handler<F: FnOnce() -> Object>(
+    f: F,
+) -> Result<Object, RuntimeError> {
     if setjmp(glob_jmp_buf_ptr()) == 0 {
         Ok(f())
     } else {

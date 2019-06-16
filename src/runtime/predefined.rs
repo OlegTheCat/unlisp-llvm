@@ -197,14 +197,26 @@ unsafe extern "C" fn native_apply_apply(_: *const Function, args: List) -> Objec
     apply_to_list(args.first().unpack_function(), args.rest())
 }
 
-unsafe extern fn native_symbol_fn_invoke(_: *const Function, sym: Object) -> Object {
+unsafe extern "C" fn native_symbol_fn_invoke(_: *const Function, sym: Object) -> Object {
     let sym = sym.unpack_symbol();
     let f = (*sym).function;
     Object::from_function(f)
 }
 
-unsafe extern fn native_symbol_fn_apply(f: *const Function, args: List) -> Object {
+unsafe extern "C" fn native_symbol_fn_apply(f: *const Function, args: List) -> Object {
     native_symbol_fn_invoke(f, args.first())
+}
+
+unsafe extern "C" fn native_set_macro_invoke(_: *const Function, f: Object) -> Object {
+    let f = f.unpack_function();
+
+    (*f).is_macro = true;
+
+    Object::nil()
+}
+
+unsafe extern "C" fn native_set_macro_apply(f: *const Function, args: List) -> Object {
+    native_set_macro_invoke(f, args.first())
 }
 
 pub fn init() {
@@ -276,5 +288,13 @@ pub fn init() {
         "apply",
         &["f"],
         true,
+    );
+
+    init_symbol_fn(
+        native_set_macro_invoke as *const c_void,
+        native_set_macro_apply as *const c_void,
+        "set-macro",
+        &["f"],
+        false,
     );
 }

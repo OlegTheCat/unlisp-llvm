@@ -47,6 +47,6 @@ pub fn compile_literal(ctx: &mut CodegenContext, literal: &Literal) -> CompileRe
                 .ok_or_else(|| UndefinedSymbol::new(s.as_str()))?;
             Ok(val)
         }
-        Literal::T => panic!("t literal is not yet supported")
+        Literal::T => panic!("t literal is not yet supported"),
     }
 }

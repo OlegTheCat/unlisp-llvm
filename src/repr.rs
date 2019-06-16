@@ -569,17 +569,60 @@ pub fn convert_into_closures(hir: &HIR) -> HIR {
 }
 
 use crate::runtime::*;
-use std::mem;
+use libc::c_char;
 use std::error::Error;
+use std::ffi::{CStr, CString};
+use std::mem;
 
-#[allow(unused)]
-pub fn form_to_runtime_object(_form: &Form) -> defs::Object {
-    unimplemented!()
+pub fn form_to_runtime_object(form: &Form) -> defs::Object {
+    match form {
+        Form::Symbol(s) => defs::Object::from_symbol(symbols::get_or_intern_symbol(s.clone())),
+        Form::Integer(i) => defs::Object::from_int(*i),
+        Form::String(s) => {
+            let c_str = CString::new(s.as_str()).expect("string conversion failed");
+            let c_ptr: *const c_char = c_str.into_raw();
+            defs::Object::from_string(c_ptr)
+        }
+        Form::List(list) => {
+            let rt_list = list
+                .iter()
+                .map(form_to_runtime_object)
+                .rev()
+                .fold(defs::List::empty(), |acc, obj| acc.cons(obj));
+            defs::Object::from_list(Box::into_raw(Box::new(rt_list)))
+        }
+        Form::T => panic!("t literal is not supported yet"),
+    }
 }
 
-#[allow(unused)]
-pub fn runtime_object_to_form(_obj: defs::Object) -> Form {
-    unimplemented!()
+pub unsafe fn runtime_object_to_form(t_obj: defs::Object) -> Form {
+    match t_obj.ty {
+        defs::ObjType::Int64 => Form::Integer(t_obj.unpack_int()),
+        defs::ObjType::List => {
+            let mut converted = vec![];
+            let mut list = t_obj.unpack_list();
+
+            while (*list).len != 0 {
+                converted.push(runtime_object_to_form((*list).first()));
+                list = (*list).rest_ptr();
+            }
+
+            Form::List(converted)
+        }
+        defs::ObjType::Function => panic!("embedding functions in code is not supported yet"),
+        defs::ObjType::Symbol => Form::Symbol(
+            CStr::from_ptr((*t_obj.unpack_symbol()).name)
+                .to_str()
+                .expect("string conversion failed")
+                .to_string(),
+        ),
+        defs::ObjType::String => Form::Symbol(
+            CStr::from_ptr(t_obj.unpack_string())
+                .to_str()
+                .expect("string conversion failed")
+                .to_string(),
+        ),
+    }
 }
 
 unsafe fn macroexpand_call(call: &Call) -> Result<HIR, Box<dyn Error>> {
@@ -600,7 +643,9 @@ unsafe fn macroexpand_call(call: &Call) -> Result<HIR, Box<dyn Error>> {
 
         let expanded = exceptions::run_with_global_ex_handler(|| apply_fn(sym_fn, arg_objs_list))?;
 
-        Ok(macroexpand_hir(&form_to_hir(&runtime_object_to_form(expanded))?)?)
+        Ok(macroexpand_hir(&form_to_hir(&runtime_object_to_form(
+            expanded,
+        ))?)?)
     }
 }
 
@@ -612,7 +657,11 @@ pub fn macroexpand_hir(hir: &HIR) -> Result<HIR, Box<dyn Error>> {
                 name: lambda.name.clone(),
                 arglist: lambda.arglist.clone(),
                 restarg: lambda.restarg.clone(),
-                body: lambda.body.iter().map(macroexpand_hir).collect::<Result<_, _>>()?,
+                body: lambda
+                    .body
+                    .iter()
+                    .map(macroexpand_hir)
+                    .collect::<Result<_, _>>()?,
             };
 
             Ok(HIR::Lambda(lambda))
@@ -626,7 +675,11 @@ pub fn macroexpand_hir(hir: &HIR) -> Result<HIR, Box<dyn Error>> {
                     .iter()
                     .map(|(s, hir)| Ok((s.clone(), macroexpand_hir(hir)?)))
                     .collect::<Result<_, Box<dyn Error>>>()?,
-                body: let_block.body.iter().map(macroexpand_hir).collect::<Result<_, _>>()?,
+                body: let_block
+                    .body
+                    .iter()
+                    .map(macroexpand_hir)
+                    .collect::<Result<_, _>>()?,
             };
 
             Ok(HIR::LetBlock(converted))
@@ -641,7 +694,6 @@ pub fn macroexpand_hir(hir: &HIR) -> Result<HIR, Box<dyn Error>> {
                 .map(|box_hir| Ok(Box::new(macroexpand_hir(&box_hir)?)));
 
             let else_hir = else_hir.transpose()?;
-
 
             let converted = If {
                 cond: cond,

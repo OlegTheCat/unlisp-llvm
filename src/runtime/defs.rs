@@ -21,7 +21,7 @@ pub union UntaggedObject {
     int: i64,
     list: *mut List,
     sym: *mut Symbol,
-    function: *const Function,
+    function: *mut Function,
     string: *const c_char,
 }
 
@@ -52,8 +52,8 @@ impl fmt::Display for ObjType {
 #[repr(C)]
 #[derive(Clone)]
 pub struct Object {
-    ty: ObjType,
-    obj: UntaggedObject,
+    pub ty: ObjType,
+    pub obj: UntaggedObject,
 }
 
 impl PartialEq for Object {
@@ -68,7 +68,7 @@ impl PartialEq for Object {
                 ObjType::List => *self.obj.list == *rhs.obj.list,
                 ObjType::Function => self.obj.function == rhs.obj.function,
                 ObjType::Symbol => self.obj.sym == rhs.obj.sym,
-                ObjType::String => strcmp(self.obj.string, rhs.obj.string) == 0
+                ObjType::String => strcmp(self.obj.string, rhs.obj.string) == 0,
             }
         }
     }
@@ -112,7 +112,7 @@ impl Object {
         }
     }
 
-    pub fn unpack_function(&self) -> *const Function {
+    pub fn unpack_function(&self) -> *mut Function {
         if self.ty == ObjType::Function {
             unsafe { self.obj.function }
         } else {
@@ -120,7 +120,6 @@ impl Object {
         }
     }
 
-    #[allow(unused)]
     pub fn unpack_string(&self) -> *const c_char {
         if self.ty == ObjType::String {
             unsafe { self.obj.string }
@@ -150,7 +149,7 @@ impl Object {
         }
     }
 
-    pub fn from_function(function: *const Function) -> Object {
+    pub fn from_function(function: *mut Function) -> Object {
         Self {
             ty: ObjType::Function,
             obj: UntaggedObject { function: function },
@@ -160,7 +159,7 @@ impl Object {
     pub fn from_string(string: *const c_char) -> Object {
         Self {
             ty: ObjType::String,
-            obj: UntaggedObject {string: string },
+            obj: UntaggedObject { string: string },
         }
     }
 
@@ -203,11 +202,18 @@ impl fmt::Display for Object {
                 ObjType::Int64 => write!(f, "{}", self.obj.int),
                 ObjType::List => display_list(self.obj.list, f),
                 ObjType::Function => write!(f, "#<FUNCTION/{}>", (*self.obj.function).arg_count),
-                ObjType::Symbol => write!(f, "{}", CStr::from_ptr((*self.obj.sym).name).to_str().unwrap()),
-                ObjType::String => write!(f, "\"{}\"", CStr::from_ptr(self.obj.string).to_str().unwrap()),
+                ObjType::Symbol => write!(
+                    f,
+                    "{}",
+                    CStr::from_ptr((*self.obj.sym).name).to_str().unwrap()
+                ),
+                ObjType::String => write!(
+                    f,
+                    "\"{}\"",
+                    CStr::from_ptr(self.obj.string).to_str().unwrap()
+                ),
             }
         }
-
     }
 }
 
@@ -261,7 +267,11 @@ impl List {
     }
 
     pub unsafe fn rest(&self) -> List {
-        (*(*self.node).next).clone()
+        (*self.rest_ptr()).clone()
+    }
+
+    pub unsafe fn rest_ptr(&self) -> *mut List {
+        (*self.node).next
     }
 
     pub fn cons(&self, obj: Object) -> List {
@@ -270,7 +280,7 @@ impl List {
             node: Box::into_raw(Box::new(Node {
                 val: Box::into_raw(Box::new(obj)),
                 next: Box::into_raw(Box::new(self.clone())),
-            }))
+            })),
         }
     }
 }
@@ -278,7 +288,7 @@ impl List {
 #[repr(C)]
 pub struct Symbol {
     pub name: *const c_char,
-    pub function: *const Function,
+    pub function: *mut Function,
 }
 
 impl Symbol {
@@ -299,7 +309,7 @@ impl Symbol {
     pub fn new(name: *const c_char) -> Self {
         Self {
             name: name,
-            function: ptr::null(),
+            function: ptr::null_mut(),
         }
     }
 }
@@ -483,12 +493,12 @@ fn unlisp_rt_int_from_obj_gen_def(ctx: &Context, module: &Module) {
 }
 
 #[no_mangle]
-pub extern "C" fn unlisp_rt_object_from_function(f: *const Function) -> Object {
+pub extern "C" fn unlisp_rt_object_from_function(f: *mut Function) -> Object {
     Object::from_function(f)
 }
 
 #[used]
-static OBJ_FROM_FN: extern "C" fn(f: *const Function) -> Object = unlisp_rt_object_from_function;
+static OBJ_FROM_FN: extern "C" fn(f: *mut Function) -> Object = unlisp_rt_object_from_function;
 
 fn unlisp_rt_object_from_function_gen_def(_: &Context, module: &Module) {
     let arg_ty = module
@@ -698,7 +708,6 @@ fn unlisp_rt_list_rest_gen_def(_ctx: &Context, module: &Module) {
 
     module.add_function("unlisp_rt_list_rest", fn_ty, Some(Linkage::External));
 }
-
 
 #[no_mangle]
 pub unsafe extern "C" fn unlisp_rt_list_cons(el: Object, list: List) -> List {

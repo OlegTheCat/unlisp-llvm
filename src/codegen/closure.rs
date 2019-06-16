@@ -183,10 +183,12 @@ fn codegen_invoke_fn(
     let mut raw_fn_args = vec![];
 
     for (i, _) in closure.free_vars.iter().enumerate() {
-
         let arg_ptr = unsafe {
-            ctx.builder
-                .build_struct_gep(struct_ptr_par, Function::FIELDS_COUNT + i as u32, "free_var_ptr")
+            ctx.builder.build_struct_gep(
+                struct_ptr_par,
+                Function::FIELDS_COUNT + i as u32,
+                "free_var_ptr",
+            )
         };
         let arg = ctx.builder.build_load(arg_ptr, "free_var");
         raw_fn_args.push(arg);
@@ -257,8 +259,11 @@ fn codegen_apply_to_fn(
 
     for (i, _) in closure.free_vars.iter().enumerate() {
         let arg_ptr = unsafe {
-            ctx.builder
-                .build_struct_gep(struct_ptr_par, Function::FIELDS_COUNT + i as u32, "free_var_ptr")
+            ctx.builder.build_struct_gep(
+                struct_ptr_par,
+                Function::FIELDS_COUNT + i as u32,
+                "free_var_ptr",
+            )
         };
         let arg = ctx.builder.build_load(arg_ptr, "free_var");
         raw_fn_args.push(arg);
@@ -270,13 +275,17 @@ fn codegen_apply_to_fn(
     let mut cur_list = list_param;
 
     for _ in closure.lambda.arglist.iter() {
-        let arg = ctx.builder.build_call(list_first_fn, &[cur_list], "arg")
+        let arg = ctx
+            .builder
+            .build_call(list_first_fn, &[cur_list], "arg")
             .try_as_basic_value()
             .left()
             .unwrap();
 
         raw_fn_args.push(arg);
-        cur_list = ctx.builder.build_call(list_rest_fn, &[cur_list], "rest")
+        cur_list = ctx
+            .builder
+            .build_call(list_rest_fn, &[cur_list], "rest")
             .try_as_basic_value()
             .left()
             .unwrap();
@@ -284,7 +293,9 @@ fn codegen_apply_to_fn(
 
     if has_restarg {
         let object_form_list_fn = ctx.lookup_known_fn("unlisp_rt_object_from_list");
-        let obj = ctx.builder.build_call(object_form_list_fn, &[cur_list], "restarg_object")
+        let obj = ctx
+            .builder
+            .build_call(object_form_list_fn, &[cur_list], "restarg_object")
             .try_as_basic_value()
             .left()
             .unwrap();
@@ -386,7 +397,8 @@ pub fn compile_closure(ctx: &mut CodegenContext, closure: &Closure) -> CompileRe
     ctx.builder
         .build_store(struct_invoke_fn_ptr, invoke_fn_cast);
 
-    let struct_apply_to_fn_ptr = unsafe { ctx.builder.build_struct_gep(struct_ptr, 6, "apply_to_ptr") };
+    let struct_apply_to_fn_ptr =
+        unsafe { ctx.builder.build_struct_gep(struct_ptr, 6, "apply_to_ptr") };
 
     let apply_to_fn_cast = ctx.builder.build_bitcast(
         apply_to_fn.as_global_value().as_pointer_value(),
@@ -413,8 +425,11 @@ pub fn compile_closure(ctx: &mut CodegenContext, closure: &Closure) -> CompileRe
             .ok_or_else(|| UndefinedSymbol::new(var.as_str()))?;
 
         let free_var_ptr = unsafe {
-            ctx.builder
-                .build_struct_gep(struct_ptr, Function::FIELDS_COUNT + i as u32, "free_var_ptr")
+            ctx.builder.build_struct_gep(
+                struct_ptr,
+                Function::FIELDS_COUNT + i as u32,
+                "free_var_ptr",
+            )
         };
         ctx.builder.build_store(free_var_ptr, var_val);
     }
