@@ -1,22 +1,31 @@
+use crate::repr::HIR;
 use crate::runtime;
+
+use super::common::*;
+use super::top_level::compile_top_level_hirs;
 
 use inkwell::basic_block::BasicBlock;
 use inkwell::builder::Builder;
 use inkwell::context::Context;
+use inkwell::execution_engine::{ExecutionEngine, JitFunction};
 use inkwell::module::Module;
 use inkwell::passes::PassManager;
 use inkwell::types::BasicTypeEnum;
 use inkwell::values::{BasicValueEnum, FunctionValue, GlobalValue};
 use inkwell::AddressSpace;
+use inkwell::OptimizationLevel;
 use std::collections::{HashMap, HashSet};
 
 use std::rc::Rc;
+
+pub type CompiledFn = JitFunction<unsafe extern "C" fn() -> runtime::defs::Object>;
 
 pub struct CodegenContext<'a> {
     pub llvm_ctx: &'a Context,
     pub builder: Builder,
     pub pass_manager: PassManager,
 
+    execution_engine: ExecutionEngine,
     counter: u64,
     module: Module,
     blocks_stack: Vec<Rc<BasicBlock>>,
@@ -54,6 +63,9 @@ impl<'a> CodegenContext<'a> {
 
     pub fn new(llvm_ctx: &'a Context) -> Self {
         let module = llvm_ctx.create_module("mod_0");
+        let ee = module
+            .create_jit_execution_engine(OptimizationLevel::None)
+            .expect("couldn't create execution engine");
         let builder = llvm_ctx.create_builder();
 
         runtime::defs::gen_defs(llvm_ctx, &module);
@@ -64,6 +76,7 @@ impl<'a> CodegenContext<'a> {
             llvm_ctx: llvm_ctx,
             pass_manager: Self::make_pass_manager(&module),
             module: module,
+            execution_engine: ee,
             builder: builder,
             blocks_stack: vec![],
             envs: vec![],
@@ -76,6 +89,10 @@ impl<'a> CodegenContext<'a> {
         let module = self
             .llvm_ctx
             .create_module(format!("mod_{}", self.gen_unique_int()).as_str());
+
+        self.execution_engine
+            .add_module(&module)
+            .expect("couldn't add module to execution engine");
 
         runtime::defs::gen_defs(self.llvm_ctx, &module);
         runtime::exceptions::gen_defs(self.llvm_ctx, &module);
@@ -220,5 +237,14 @@ impl<'a> CodegenContext<'a> {
             self.module.print_to_stderr();
             panic!("[{}] function verification failed", tag);
         }
+    }
+
+    pub unsafe fn compile_hirs(&mut self, hirs: &[HIR]) -> GenResult<CompiledFn> {
+        let top_level_fn_name = compile_top_level_hirs(self, hirs)?;
+
+        Ok(self
+            .execution_engine
+            .get_function(top_level_fn_name.as_str())
+            .expect("couldn't find top-level function in execution engine"))
     }
 }

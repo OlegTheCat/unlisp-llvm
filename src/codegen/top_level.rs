@@ -35,7 +35,7 @@ pub fn compile_hirs(ctx: &mut CodegenContext, hirs: &[HIR]) -> CompileResult {
     Ok(val_or_nil)
 }
 
-pub fn compile_top_level_hir(ctx: &mut CodegenContext, hirs: &[HIR]) -> GenResult<String> {
+pub fn compile_top_level_hirs(ctx: &mut CodegenContext, hirs: &[HIR]) -> GenResult<String> {
     let obj_struct_ty = ctx.lookup_known_type("unlisp_rt_object");
     let fn_ty = obj_struct_ty.fn_type(&[], false);
     let fn_name = ctx.mangle_str("__repl_form");
