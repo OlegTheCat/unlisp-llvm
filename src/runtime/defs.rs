@@ -201,7 +201,13 @@ impl fmt::Display for Object {
             match self.ty {
                 ObjType::Int64 => write!(f, "{}", self.obj.int),
                 ObjType::List => display_list(self.obj.list, f),
-                ObjType::Function => write!(f, "#<FUNCTION/{}>", (*self.obj.function).arg_count),
+                ObjType::Function => write!(f, "#<FUNCTION{}/{}>",
+                                            if (*self.obj.function).is_macro {
+                                                "+MACRO"
+                                            } else {
+                                                ""
+                                            },
+                                            (*self.obj.function).arg_count),
                 ObjType::Symbol => write!(
                     f,
                     "{}",

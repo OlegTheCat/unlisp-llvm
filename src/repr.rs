@@ -629,7 +629,10 @@ unsafe fn macroexpand_call(call: &Call) -> Result<HIR, Box<dyn Error>> {
     let call_sym = symbols::get_or_intern_symbol(call.fn_name.clone());
     let sym_fn = (*call_sym).function;
     if sym_fn.is_null() || !(*sym_fn).is_macro {
-        Ok(HIR::Call(call.clone()))
+        Ok(HIR::Call( Call {
+            fn_name: call.fn_name.clone(),
+            args: call.args.iter().map(macroexpand_hir).collect::<Result<_, _>>()?,
+        }))
     } else {
         let apply_fn: unsafe extern "C" fn(*const defs::Function, defs::List) -> defs::Object =
             mem::transmute((*sym_fn).apply_to_f_ptr);
