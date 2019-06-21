@@ -236,6 +236,30 @@ unsafe extern "C" fn native_set_macro_apply(f: *const Function, args: List) -> O
     native_set_macro_invoke(f, args.first())
 }
 
+unsafe extern "C" fn native_listp_invoke(_: *const Function, x: Object) -> Object {
+    if x.ty == ObjType::List {
+        Object::from_int(1)
+    } else {
+        Object::nil()
+    }
+}
+
+unsafe extern "C" fn native_listp_apply(f: *const Function, args: List) -> Object {
+    native_set_macro_invoke(f, args.first())
+}
+
+unsafe extern "C" fn native_symbolp_invoke(_: *const Function, x: Object) -> Object {
+    if x.ty == ObjType::Symbol {
+        Object::from_int(1)
+    } else {
+        Object::nil()
+    }
+}
+
+unsafe extern "C" fn native_symbolp_apply(f: *const Function, args: List) -> Object {
+    native_symbolp_invoke(f, args.first())
+}
+
 pub fn init() {
     init_symbol_fn(
         native_add_invoke as *const c_void,
@@ -312,6 +336,22 @@ pub fn init() {
         native_set_macro_apply as *const c_void,
         "set-macro",
         &["f"],
+        false,
+    );
+
+    init_symbol_fn(
+        native_listp_invoke as *const c_void,
+        native_listp_apply as *const c_void,
+        "listp",
+        &["x"],
+        false,
+    );
+
+    init_symbol_fn(
+        native_symbolp_invoke as *const c_void,
+        native_symbolp_apply as *const c_void,
+        "symbolp",
+        &["x"],
         false,
     );
 }

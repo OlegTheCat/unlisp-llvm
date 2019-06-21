@@ -1,0 +1,286 @@
+(set-fn (quote list) (lambda (& args) args))
+
+(set-fn
+ (quote list*)
+ (lambda list* (& args)
+   (apply (symbol-function (quote apply))
+          (symbol-function (quote list)) args)))
+
+(set-fn
+ (quote funcall)
+ (lambda funcall (f & args)
+   (apply f args)))
+
+(set-fn
+ (quote emptyp)
+ (lambda (list)
+   (if list nil 1)))
+
+(set-fn
+ (quote append)
+ (lambda append (x y)
+   (if (emptyp x)
+       y
+       (cons (first x)
+             (append (rest x) y)))))
+
+(set-fn
+ (quote list*)
+ (lambda list* (& args)
+   (apply (symbol-function (quote apply))
+          (symbol-function (quote list)) args)))
+
+(set-fn
+ (quote funcall)
+ (lambda funcall (f & args)
+   (apply f args)))
+
+(set-fn
+ (quote emptyp)
+ (lambda (list)
+   (if list nil 1)))
+
+(set-fn
+ (quote append)
+ (lambda append (x y)
+   (if (emptyp x)
+       y
+       (cons (first x)
+             (append (rest x) y)))))
+
+(set-fn
+ (quote reduce)
+ (lambda reduce (f init list)
+   (if (emptyp list)
+       init
+       (reduce
+        f
+        (funcall f init (first list))
+        (rest list)))))
+
+
+(set-fn
+ (quote reverse-inner)
+ (lambda (x acc)
+   (if (emptyp x)
+       acc
+       (reverse-inner
+        (rest x)
+        (cons (first x) acc)))))
+
+(set-fn
+ (quote reverse)
+ (lambda reverse (x)
+   (reverse-inner x ())))
+
+(set-fn
+ (quote not)
+ (lambda not (x)
+   (if x nil 1)))
+
+
+(set-fn
+ (quote unq)
+ (lambda unq (x)
+   (error "unq outside of qquote")))
+
+(set-macro (symbol-function (quote unq)))
+
+(set-fn
+ (quote unqs)
+ (lambda unqs (x)
+   (error "unqs outside of qquote")))
+
+(set-macro (symbol-function (quote unqs)))
+
+(set-fn
+ (quote qquote)
+ (lambda quote (x)
+   (qquote-process x)))
+
+(set-macro (symbol-function (quote qquote)))
+
+(set-fn
+ (quote qquote-process)
+ (lambda qquote-process (x)
+   (if (not (listp x))
+       (list (quote quote) x)
+       (if (emptyp x)
+           (list (quote quote) x)
+           (if (equal (first x) (quote qquote))
+               (qquote-process (qquote-process (first (rest x))))
+               (if (equal (first x) (quote unq))
+                   (first (rest x))
+                   (if (equal (first x) (quote unqs))
+                       (error "unqs after qquote")
+                       (qquote-transform-list x))))))))
+
+(set-fn
+ (quote qquote-transform-list)
+ (lambda qquote-transform-list (x)
+   (qquote-transform-list-inner x ())))
+
+(set-fn
+ (quote qquote-transform-list-inner)
+ (lambda qquote-transform-list-inner (x transformed-acc)
+   (if (emptyp x)
+       (list* (quote reduce) (quote (lambda (x y) (append x y)))
+              ()
+              (list (cons (quote list) (reverse transformed-acc))))
+       (qquote-transform-list-inner
+        (rest x)
+        (cons (qquote-transform-list-item (first x))
+              transformed-acc)))))
+
+(set-fn
+ (quote qquote-transform-list-item)
+ (lambda qquote-transform-list-item (x)
+   (if (not (listp x))
+       (list (quote list) (list (quote quote) x))
+       (if (emptyp x)
+           (list (quote list) (list (quote quote) x))
+           (if (equal (first x) (quote unq))
+               (list (quote list) (first (rest x)))
+               (if (equal (first x) (quote unqs))
+                   (first (rest x))
+                   (list (quote list) (qquote-process x))))))))
+
+
+(set-fn
+ (quote defmacro)
+ (lambda defmacro (name args & body)
+   (qquote
+    (let ((--macro-fn (lambda (unq name) (unq args)
+                        (unqs body))))
+      (set-fn
+       (quote (unq name))
+       --macro-fn)
+      (set-macro --macro-fn)))))
+
+(set-macro (symbol-function (quote defmacro)))
+
+(defmacro defun (name args & body)
+  (qquote
+   (set-fn
+    (quote (unq name))
+    (lambda (unq name) (unq args)
+      (unqs body)))))
+
+(defun fibo (n)
+  (if (equal n 1)
+      1
+      (if (equal n 0)
+          1
+          (+ (fibo (- n 1))
+             (fibo (- n 2))))))
+
+(defmacro strange-let (bindings & body)
+  (reduce
+   (lambda (acc binding)
+     (let ((sym (first binding))
+           (val (first (rest binding))))
+       (qquote
+        (funcall
+         (lambda ((unq sym))
+           (unq acc))
+         (unq val)))))
+   (qquote (let () (unqs body)))
+   (reverse bindings)))
+
+(defmacro symf (sym)
+  (qquote
+   (symbol-function (quote (unq sym)))))
+
+(defmacro cond (& clauses)
+  (reduce
+   (lambda (acc clause)
+     (qquote
+      (if (unq (first clause))
+          (let ()
+            (unqs (rest clause)))
+          (unq acc))))
+   (quote nil)
+   (reverse clauses)))
+
+(defmacro and (& forms)
+  (let ((reversed (if (emptyp forms)
+                      (list 111)
+                      (reverse forms))))
+    (reduce
+     (lambda (acc form)
+       (qquote
+        (if (unq form) (unq acc) nil)))
+     (first reversed)
+     (rest reversed))))
+
+(defmacro or (& forms)
+  (let ((reversed (if (emptyp forms)
+                      (list nil)
+                      (reverse forms))))
+    (reduce
+     (lambda (acc form)
+       (qquote
+        (let ((eform (unq form)))
+          (if eform eform (unq acc)))))
+     (first reversed)
+     (rest reversed))))
+
+(defmacro when (c & body)
+  (qquote
+   (if (unq c)
+       (let ()
+         (unqs body)))))
+
+(defun second (list)
+  (first (rest list)))
+
+(defmacro if-let (binding then & else)
+  (qquote
+   (let ((unq binding))
+     (if (unq (first binding))
+         (unq then)
+         (unqs else)))))
+
+(defmacro when-let (binding & body)
+  (qquote
+   (if-let (unq binding)
+           (let () (unqs body))
+           nil)))
+
+(defmacro if-it (cond then & else)
+  (qquote
+   (if-let (it (unq cond))
+           (unq then)
+           (unqs else))))
+
+(defun every? (pred coll)
+  (or (emptyp coll)
+      (and (funcall pred (first coll))
+           (every? pred (rest coll)))))
+
+(defun mapcar-single (f xs)
+  (if (emptyp xs)
+      xs
+      (cons (funcall f (first xs))
+            (mapcar-single f (rest xs)))))
+
+(defun mapcar (f xs & ys)
+  (let ((lists (cons xs ys)))
+    (if (every? (lambda (x) (not (emptyp x)))
+                lists)
+        (let ((heads (mapcar-single (symf first)
+                                    lists))
+              (tails (mapcar-single (symf rest)
+                                    lists)))
+          (cons (apply f heads)
+                (apply (symf mapcar) f tails)))
+        ())))
+
+(defun range-inner (to acc)
+  (if (equal to 0)
+      (cons 0 acc)
+      (range-inner (- to 1)
+                   (cons to acc))))
+
+(defun range (to)
+  (range-inner to ()))

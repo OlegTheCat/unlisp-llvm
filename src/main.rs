@@ -4,6 +4,7 @@
 use inkwell::context::Context;
 
 use std::error::Error;
+use std::fs;
 use std::io;
 use std::io::{Read, Write};
 
@@ -25,6 +26,31 @@ fn read_and_parse<'a, T: Read>(
         .as_ref()
         .map(repr::form_to_hir_with_transforms)
         .transpose()?)
+}
+
+pub fn eval_stdlib(ctx: &mut CodegenContext) {
+    let mut file = fs::File::open("src/stdlib.unl").expect("stdlib file not found");
+
+    let mut reader = reader::Reader::create(&mut file);
+    loop {
+        match read_and_parse(&mut reader) {
+            Ok(Some(hir)) => unsafe {
+                match ctx.compile_hirs(&[hir]) {
+                    Ok(compiled_fn) => {
+                        runtime::exceptions::run_with_global_ex_handler(|| compiled_fn.call())
+                            .map_err(|err| panic!("error during stdlib loading: {}", err))
+                            .unwrap();
+                    }
+                    Err(err) => {
+                        panic!("error during stdlib loading: {}", err);
+                    }
+                }
+            },
+            Ok(None) => break,
+            Err(ref e) => panic!("error during stdlib loading: {}", e),
+        }
+        ctx.reinitialize();
+    }
 }
 
 fn repl(ctx: &mut CodegenContext) {
@@ -73,6 +99,8 @@ fn main() {
 
     let ctx = Context::create();
     let mut codegen_ctx = CodegenContext::new(&ctx);
+
+    eval_stdlib(&mut codegen_ctx);
 
     repl(&mut codegen_ctx);
 }
