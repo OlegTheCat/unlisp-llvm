@@ -1,7 +1,13 @@
 use crate::error::SyntaxError;
+use crate::runtime::*;
 
 use std::collections::HashSet;
+use std::error::Error;
+use std::ffi::{CStr, CString};
 use std::iter::FromIterator;
+use std::mem;
+
+use libc::c_char;
 
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub enum Form {
@@ -99,11 +105,11 @@ fn form_to_literal(form: &Form) -> Literal {
     }
 }
 
-fn forms_to_hirs(forms: &[Form]) -> Result<Vec<HIR>, SyntaxError> {
+fn forms_to_hirs(forms: &[Form]) -> Result<Vec<HIR>, Box<dyn Error>> {
     forms.iter().map(form_to_hir).collect::<Result<Vec<_>, _>>()
 }
 
-fn forms_to_hir(forms: &Vec<Form>) -> Result<HIR, SyntaxError> {
+fn forms_to_hir(forms: &Vec<Form>) -> Result<HIR, Box<dyn Error>> {
     fn is(s1: &String, s2: &str) -> bool {
         s1.as_str() == s2
     }
@@ -113,7 +119,7 @@ fn forms_to_hir(forms: &Vec<Form>) -> Result<HIR, SyntaxError> {
     } else {
         match &forms[0] {
             Form::T | Form::Integer(_) | Form::String(_) | Form::List(_) => {
-                Err(SyntaxError::new("illegal function call"))
+                Ok(Err(SyntaxError::new("illegal function call"))?)
             }
 
             Form::Symbol(s) if is(s, "quote") => {
@@ -252,7 +258,7 @@ fn forms_to_hir(forms: &Vec<Form>) -> Result<HIR, SyntaxError> {
                         body = forms_to_hirs(&forms[2..])?;
                     }
 
-                    _ => return Err(SyntaxError::new("not a list in lambda arglist")),
+                    _ => return Err(SyntaxError::new("not a list in lambda arglist"))?,
                 };
 
                 let (simple_args, restarg) = parsed_arglist;
@@ -266,21 +272,46 @@ fn forms_to_hir(forms: &Vec<Form>) -> Result<HIR, SyntaxError> {
 
                 Ok(HIR::Lambda(lambda))
             }
-            Form::Symbol(s) => {
-                let call = Call {
-                    fn_name: s.clone(),
-                    args: forms[1..]
+            Form::Symbol(s) => unsafe {
+                let call_sym = symbols::get_or_intern_symbol(s.clone());
+                let sym_fn = (*call_sym).function;
+
+                let call_hir;
+
+                if sym_fn.is_null() || !(*sym_fn).is_macro {
+                    let call = Call {
+                        fn_name: s.clone(),
+                        args: forms[1..]
+                            .iter()
+                            .map(form_to_hir)
+                            .collect::<Result<Vec<_>, _>>()?,
+                    };
+
+                    call_hir = HIR::Call(call);
+                } else {
+                    let apply_fn: unsafe extern "C" fn(
+                        *const defs::Function,
+                        defs::List,
+                    ) -> defs::Object = mem::transmute((*sym_fn).apply_to_f_ptr);
+
+                    let arg_objs_list = forms[1..]
                         .iter()
-                        .map(form_to_hir)
-                        .collect::<Result<Vec<_>, _>>()?,
-                };
-                Ok(HIR::Call(call))
-            }
+                        .map(form_to_runtime_object)
+                        .rev()
+                        .fold(defs::List::empty(), |acc, obj| acc.cons(obj));
+                    let expanded =
+                        exceptions::run_with_global_ex_handler(|| apply_fn(sym_fn, arg_objs_list))?;
+
+                    call_hir = form_to_hir(&runtime_object_to_form(expanded))?;
+                }
+
+                Ok(call_hir)
+            },
         }
     }
 }
 
-pub fn form_to_hir(form: &Form) -> Result<HIR, SyntaxError> {
+pub fn form_to_hir(form: &Form) -> Result<HIR, Box<dyn Error>> {
     match form {
         literal @ Form::T
         | literal @ Form::Symbol(_)
@@ -293,110 +324,7 @@ pub fn form_to_hir(form: &Form) -> Result<HIR, SyntaxError> {
 
 pub fn form_to_hir_with_transforms(form: &Form) -> Result<HIR, Box<dyn Error>> {
     let hir = form_to_hir(form)?;
-    let expanded = macroexpand_hir(&hir)?;
-    Ok(convert_into_closures(&expanded))
-}
-
-fn literal_to_form(literal: &Literal) -> Form {
-    match literal {
-        Literal::T => Form::T,
-        Literal::SymbolLiteral(s) => Form::Symbol(s.clone()),
-        Literal::IntegerLiteral(i) => Form::Integer(*i),
-        Literal::StringLiteral(s) => Form::String(s.clone()),
-        Literal::ListLiteral(list) => Form::List(list.iter().map(literal_to_form).collect()),
-    }
-}
-
-fn call_to_form(call: &Call) -> Form {
-    let mut call_form = vec![];
-    call_form.push(Form::Symbol(call.fn_name.clone()));
-
-    let arg_forms: Vec<_> = call.args.iter().map(hir_to_form).collect();
-    call_form.extend(arg_forms);
-
-    Form::List(call_form)
-}
-
-fn let_block_to_form(let_block: &LetBlock) -> Form {
-    let mut let_form = vec![];
-    let_form.push(Form::Symbol("let".to_string()));
-
-    let mut bindings_form = vec![];
-
-    for (var, val) in let_block.bindings.iter() {
-        let mut binding_form = vec![];
-        binding_form.push(Form::Symbol(var.to_string()));
-        binding_form.push(hir_to_form(val));
-
-        bindings_form.push(Form::List(binding_form));
-    }
-
-    let_form.push(Form::List(bindings_form));
-
-    for body_item in let_block.body.iter() {
-        let_form.push(hir_to_form(body_item));
-    }
-
-    Form::List(let_form)
-}
-
-fn lambda_to_form(lambda: &Lambda) -> Form {
-    let mut lambda_form = vec![];
-    lambda_form.push(Form::Symbol("lambda".to_string()));
-
-    let mut arglist_form: Vec<_> = lambda
-        .arglist
-        .iter()
-        .map(|arg| Form::Symbol(arg.to_string()))
-        .collect();
-
-    if let Some(arg) = &lambda.restarg {
-        arglist_form.push(Form::Symbol("&".to_string()));
-        arglist_form.push(Form::Symbol(arg.to_string()));
-    }
-
-    lambda_form.push(Form::List(arglist_form));
-
-    for body_item in lambda.body.iter() {
-        lambda_form.push(hir_to_form(body_item));
-    }
-
-    Form::List(lambda_form)
-}
-
-fn if_to_form(if_hir: &If) -> Form {
-    let mut if_form = vec![];
-
-    if_form.push(Form::Symbol("if".to_string()));
-
-    if_form.push(hir_to_form(&if_hir.cond));
-    if_form.push(hir_to_form(&if_hir.then_hir));
-
-    if let Some(hir) = &if_hir.else_hir {
-        if_form.push(hir_to_form(hir));
-    }
-
-    Form::List(if_form)
-}
-
-fn quote_to_form(quote: &Quote) -> Form {
-    Form::List(vec![
-        Form::Symbol("quote".to_string()),
-        literal_to_form(&quote.body),
-    ])
-}
-
-#[allow(unused)]
-pub fn hir_to_form(hir: &HIR) -> Form {
-    match hir {
-        HIR::Literal(lit) => literal_to_form(lit),
-        HIR::Call(call) => call_to_form(call),
-        HIR::LetBlock(let_block) => let_block_to_form(let_block),
-        HIR::Lambda(lambda) => lambda_to_form(lambda),
-        HIR::Closure(closure) => lambda_to_form(&closure.lambda),
-        HIR::If(if_hir) => if_to_form(if_hir),
-        HIR::Quote(quote) => quote_to_form(quote),
-    }
+    Ok(convert_into_closures(&hir))
 }
 
 fn convert_lambda_body_item(
@@ -568,12 +496,6 @@ pub fn convert_into_closures(hir: &HIR) -> HIR {
     }
 }
 
-use crate::runtime::*;
-use libc::c_char;
-use std::error::Error;
-use std::ffi::{CStr, CString};
-use std::mem;
-
 pub fn form_to_runtime_object(form: &Form) -> defs::Object {
     match form {
         Form::Symbol(s) => defs::Object::from_symbol(symbols::get_or_intern_symbol(s.clone())),
@@ -622,89 +544,5 @@ pub unsafe fn runtime_object_to_form(t_obj: defs::Object) -> Form {
                 .expect("string conversion failed")
                 .to_string(),
         ),
-    }
-}
-
-unsafe fn macroexpand_call(call: &Call) -> Result<HIR, Box<dyn Error>> {
-    let call_sym = symbols::get_or_intern_symbol(call.fn_name.clone());
-    let sym_fn = (*call_sym).function;
-    if sym_fn.is_null() || !(*sym_fn).is_macro {
-        Ok(HIR::Call( Call {
-            fn_name: call.fn_name.clone(),
-            args: call.args.iter().map(macroexpand_hir).collect::<Result<_, _>>()?,
-        }))
-    } else {
-        let apply_fn: unsafe extern "C" fn(*const defs::Function, defs::List) -> defs::Object =
-            mem::transmute((*sym_fn).apply_to_f_ptr);
-
-        let arg_objs_list = call
-            .args
-            .iter()
-            .map(|hir| form_to_runtime_object(&hir_to_form(hir)))
-            .rev()
-            .fold(defs::List::empty(), |acc, obj| acc.cons(obj));
-
-        let expanded = exceptions::run_with_global_ex_handler(|| apply_fn(sym_fn, arg_objs_list))?;
-
-        Ok(macroexpand_hir(&form_to_hir(&runtime_object_to_form(
-            expanded,
-        ))?)?)
-    }
-}
-
-pub fn macroexpand_hir(hir: &HIR) -> Result<HIR, Box<dyn Error>> {
-    match hir {
-        HIR::Literal(literal) => Ok(HIR::Literal(literal.clone())),
-        HIR::Lambda(lambda) => {
-            let lambda = Lambda {
-                name: lambda.name.clone(),
-                arglist: lambda.arglist.clone(),
-                restarg: lambda.restarg.clone(),
-                body: lambda
-                    .body
-                    .iter()
-                    .map(macroexpand_hir)
-                    .collect::<Result<_, _>>()?,
-            };
-
-            Ok(HIR::Lambda(lambda))
-        }
-        HIR::Closure(_) => panic!("unexpected closure"),
-        HIR::Call(call) => unsafe { macroexpand_call(call) },
-        HIR::LetBlock(let_block) => {
-            let converted = LetBlock {
-                bindings: let_block
-                    .bindings
-                    .iter()
-                    .map(|(s, hir)| Ok((s.clone(), macroexpand_hir(hir)?)))
-                    .collect::<Result<_, Box<dyn Error>>>()?,
-                body: let_block
-                    .body
-                    .iter()
-                    .map(macroexpand_hir)
-                    .collect::<Result<_, _>>()?,
-            };
-
-            Ok(HIR::LetBlock(converted))
-        }
-        HIR::Quote(quote) => Ok(HIR::Quote(quote.clone())),
-        HIR::If(if_hir) => {
-            let cond = Box::new(macroexpand_hir(&if_hir.cond)?);
-            let then_hir = Box::new(macroexpand_hir(&if_hir.then_hir)?);
-            let else_hir: Option<Result<_, Box<dyn Error>>> = if_hir
-                .else_hir
-                .as_ref()
-                .map(|box_hir| Ok(Box::new(macroexpand_hir(&box_hir)?)));
-
-            let else_hir = else_hir.transpose()?;
-
-            let converted = If {
-                cond: cond,
-                then_hir: then_hir,
-                else_hir: else_hir,
-            };
-
-            Ok(HIR::If(converted))
-        }
     }
 }
