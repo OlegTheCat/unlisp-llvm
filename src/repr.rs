@@ -319,8 +319,17 @@ fn forms_to_hir(forms: &Vec<Form>) -> Result<HIR, Box<dyn Error>> {
                         .map(form_to_runtime_object)
                         .rev()
                         .fold(defs::List::empty(), |acc, obj| acc.cons(obj));
-                    let expanded =
-                        exceptions::run_with_global_ex_handler(|| apply_fn(sym_fn, arg_objs_list))?;
+
+                    let expanded = exceptions::run_with_global_ex_handler(|| {
+                        if !defs::unlisp_rt_check_arity(sym_fn, arg_objs_list.len) {
+                            exceptions::raise_arity_error(
+                                (*sym_fn).name,
+                                (*sym_fn).arg_count,
+                                arg_objs_list.len,
+                            );
+                        }
+                        apply_fn(sym_fn, arg_objs_list)
+                    })?;
 
                     call_hir = form_to_hir(&runtime_object_to_form(expanded))?;
                 }

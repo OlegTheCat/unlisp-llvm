@@ -86,7 +86,12 @@ fn repl(ctx: &mut CodegenContext) {
                 }
             }
             Ok(None) => break,
-            Err(ref e) => println!("reader error: {}", e),
+            Err(e) => {
+                match e.downcast_ref::<error::RuntimeError>() {
+                    Some(_) => println!("macroexpansion error: {}", e),
+                    None => println!("reader error: {}", e)
+                }
+            }
         }
         ctx.reinitialize();
         prompt();
