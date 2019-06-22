@@ -131,6 +131,16 @@ fn forms_to_hir(forms: &Vec<Form>) -> Result<HIR, Box<dyn Error>> {
                     ),
                 };
 
+                forms
+                    .get(2)
+                    .map(|_| {
+                        Err(SyntaxError::new(format!(
+                            "wrong number of arguments ({}) passed to quote",
+                            forms.len() - 1
+                        ))) as Result<(), _>
+                    })
+                    .transpose()?;
+
                 Ok(HIR::Quote(quote))
             }
 
@@ -150,6 +160,11 @@ fn forms_to_hir(forms: &Vec<Form>) -> Result<HIR, Box<dyn Error>> {
                 let else_hir = forms
                     .get(3)
                     .map(|form| form_to_hir(form).map(Box::new))
+                    .transpose()?;
+
+                forms
+                    .get(4)
+                    .map(|_| Err(SyntaxError::new("too many clauses in if")) as Result<(), _>)
                     .transpose()?;
 
                 let if_hir = If {
@@ -182,6 +197,11 @@ fn forms_to_hir(forms: &Vec<Form>) -> Result<HIR, Box<dyn Error>> {
                     let val_form = binding
                         .get(1)
                         .ok_or_else(|| SyntaxError::new("no value in binding clause"))?;
+
+                    binding
+                        .get(3)
+                        .map(|_| Err(SyntaxError::new("malformed let binding")) as Result<(), _>)
+                        .transpose()?;
 
                     let val_form = form_to_hir(val_form)?;
 
