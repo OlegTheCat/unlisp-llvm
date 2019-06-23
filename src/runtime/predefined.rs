@@ -1,6 +1,7 @@
 use super::defs::*;
 use super::exceptions;
 use super::symbols;
+use crate::error::RuntimeError;
 
 use libc::{c_char, c_void};
 use std::ffi::CString;
@@ -260,6 +261,55 @@ unsafe extern "C" fn native_symbolp_apply(f: *const Function, args: List) -> Obj
     native_symbolp_invoke(f, args.first())
 }
 
+pub unsafe fn call_macro(f: *mut Function, args: List) -> Result<Object, RuntimeError> {
+    assert!((*f).is_macro);
+
+    let apply_fn: unsafe extern "C" fn(*const Function, List) -> Object =
+        mem::transmute((*f).apply_to_f_ptr);
+
+    exceptions::run_with_global_ex_handler(|| {
+        if !unlisp_rt_check_arity(f, args.len) {
+            exceptions::raise_arity_error((*f).name, (*f).arg_count, args.len);
+        }
+        apply_fn(f, args)
+    })
+}
+
+unsafe extern "C" fn native_macroexpand_1_invoke(_: *const Function, form: Object) -> Object {
+    match &form.ty {
+        ObjType::List => {
+            let list = form.unpack_list();
+            if (*list).len == 0 {
+                form
+            } else {
+                let first = (*list).first();
+
+                match first.ty {
+                    ObjType::Symbol => {
+                        let sym = first.unpack_symbol();
+                        let sym_fn = (*sym).function;
+
+                        if sym_fn.is_null() || !(*sym_fn).is_macro {
+                            form
+                        } else {
+                            match call_macro(sym_fn, (*list).rest()) {
+                                Ok(expanded) => expanded,
+                                Err(e) => exceptions::raise_error(format!("{}", e)),
+                            }
+                        }
+                    }
+                    _ => form,
+                }
+            }
+        }
+        _ => form,
+    }
+}
+
+unsafe extern "C" fn native_macroexpand_1_apply(f: *const Function, args: List) -> Object {
+    native_macroexpand_1_invoke(f, args.first())
+}
+
 pub fn init() {
     init_symbol_fn(
         native_add_invoke as *const c_void,
@@ -352,6 +402,14 @@ pub fn init() {
         native_symbolp_apply as *const c_void,
         "symbolp",
         &["x"],
+        false,
+    );
+
+    init_symbol_fn(
+        native_macroexpand_1_invoke as *const c_void,
+        native_macroexpand_1_apply as *const c_void,
+        "macroexpand-1",
+        &["form"],
         false,
     );
 }

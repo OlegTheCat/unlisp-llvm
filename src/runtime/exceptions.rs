@@ -11,42 +11,62 @@ use libc::c_char;
 
 use crate::error::RuntimeError;
 
-const JMP_BUF_WIDTH: usize = mem::size_of::<u32>() * 40;
+const JMP_BUF_SIZE: usize = mem::size_of::<u32>() * 40;
+
+type JmpBuf = [i8; JMP_BUF_SIZE];
 
 #[export_name = "glob_jmp_buf"]
 #[no_mangle]
 #[used]
-static mut GLOB_JMP_BUF: [i8; JMP_BUF_WIDTH] = [0; JMP_BUF_WIDTH];
+static mut GLOB_JMP_BUF: JmpBuf = [0; JMP_BUF_SIZE];
 
 #[export_name = "err_msg_ptr"]
 #[no_mangle]
 #[used]
 static mut ERR_MSG_PTR: *mut i8 = ptr::null_mut();
 
-fn glob_jmp_buf_ptr() -> *mut i8 {
-    unsafe { &mut GLOB_JMP_BUF[0] as *mut i8 }
+unsafe fn jmp_buf_ptr(buf: &mut JmpBuf) -> *mut i8 {
+    &mut buf[0] as *mut i8
+}
+
+unsafe fn glob_jmp_buf_ptr() -> *mut i8 {
+    jmp_buf_ptr(&mut GLOB_JMP_BUF)
 }
 
 extern "C" {
     fn setjmp(buf: *mut i8) -> i32;
-    fn longjmp(buf: *const i8);
+    fn longjmp(buf: *const i8) -> !;
 }
 
 pub unsafe fn run_with_global_ex_handler<F: FnOnce() -> Object>(
     f: F,
 ) -> Result<Object, RuntimeError> {
-    if setjmp(glob_jmp_buf_ptr()) == 0 {
+    let mut prev_handler: JmpBuf = mem::zeroed();
+
+    ptr::copy_nonoverlapping(
+        glob_jmp_buf_ptr(),
+        jmp_buf_ptr(&mut prev_handler),
+        JMP_BUF_SIZE,
+    );
+
+    let result = if setjmp(glob_jmp_buf_ptr()) == 0 {
         Ok(f())
     } else {
         Err(RuntimeError::new((*(ERR_MSG_PTR as *mut String)).clone()))
-    }
+    };
+
+    ptr::copy_nonoverlapping(
+        jmp_buf_ptr(&mut prev_handler),
+        glob_jmp_buf_ptr(),
+        JMP_BUF_SIZE,
+    );
+
+    result
 }
 
-fn set_msg_and_jump(msg: String) {
-    unsafe {
-        ERR_MSG_PTR = Box::into_raw(Box::new(msg)) as *mut i8;
-        longjmp(glob_jmp_buf_ptr());
-    }
+pub unsafe fn raise_error(msg: String) -> ! {
+    ERR_MSG_PTR = Box::into_raw(Box::new(msg)) as *mut i8;
+    longjmp(glob_jmp_buf_ptr())
 }
 
 pub fn gen_defs(ctx: &Context, module: &Module) {
@@ -77,9 +97,9 @@ pub fn gen_defs(ctx: &Context, module: &Module) {
 // }
 
 #[no_mangle]
-pub extern "C" fn raise_arity_error(name: *const c_char, _expected: u64, actual: u64) {
+pub unsafe extern "C" fn raise_arity_error(name: *const c_char, _expected: u64, actual: u64) -> ! {
     let name_str = if name != ptr::null() {
-        unsafe { CStr::from_ptr(name).to_str().unwrap() }
+        CStr::from_ptr(name).to_str().unwrap()
     } else {
         "lambda"
     };
@@ -89,11 +109,11 @@ pub extern "C" fn raise_arity_error(name: *const c_char, _expected: u64, actual:
         actual, name_str
     );
 
-    set_msg_and_jump(msg);
+    raise_error(msg);
 }
 
 #[used]
-static RAISE_ARITY_ERROR: extern "C" fn(name: *const c_char, expected: u64, actual: u64) =
+static RAISE_ARITY_ERROR: unsafe extern "C" fn(name: *const c_char, expected: u64, actual: u64) -> ! =
     raise_arity_error;
 
 fn raise_arity_error_gen_def(ctx: &Context, module: &Module) {
@@ -111,16 +131,16 @@ fn raise_arity_error_gen_def(ctx: &Context, module: &Module) {
 }
 
 #[no_mangle]
-pub extern "C" fn raise_undef_fn_error(name: *const c_char) {
-    let name_str = unsafe { CStr::from_ptr(name).to_str().unwrap() };
+pub unsafe extern "C" fn raise_undef_fn_error(name: *const c_char) -> ! {
+    let name_str = CStr::from_ptr(name).to_str().unwrap();
 
     let msg = format!("undefined function {}", name_str);
 
-    set_msg_and_jump(msg);
+    raise_error(msg);
 }
 
 #[used]
-static RAISE_UNDEF_FN_ERROR: extern "C" fn(name: *const c_char) = raise_undef_fn_error;
+static RAISE_UNDEF_FN_ERROR: unsafe extern "C" fn(name: *const c_char) -> ! = raise_undef_fn_error;
 
 fn raise_undef_fn_error_gen_def(ctx: &Context, module: &Module) {
     let void_ty = ctx.void_type();
@@ -132,8 +152,8 @@ fn raise_undef_fn_error_gen_def(ctx: &Context, module: &Module) {
     module.add_function("raise_undef_fn_error", fn_ty, Some(Linkage::External));
 }
 
-pub fn raise_cast_error(from: String, to: String) {
+pub unsafe fn raise_cast_error(from: String, to: String) -> ! {
     let msg = format!("cannot cast {} to {}", from, to);
 
-    set_msg_and_jump(msg);
+    raise_error(msg)
 }

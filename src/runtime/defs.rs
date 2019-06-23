@@ -84,8 +84,7 @@ impl Object {
     }
 
     fn type_err(&self, target_ty: ObjType) -> ! {
-        exceptions::raise_cast_error(format!("{}", self.ty), format!("{}", target_ty));
-        unreachable!()
+        unsafe { exceptions::raise_cast_error(format!("{}", self.ty), format!("{}", target_ty)) };
     }
 
     pub fn unpack_int(&self) -> i64 {
