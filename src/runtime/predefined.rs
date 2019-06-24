@@ -4,7 +4,7 @@ use super::symbols;
 use crate::error::RuntimeError;
 
 use libc::{c_char, c_void};
-use std::ffi::CString;
+use std::ffi::{CStr, CString};
 use std::mem;
 
 fn arr_to_raw(arr: &[&str]) -> *const *const c_char {
@@ -310,6 +310,17 @@ unsafe extern "C" fn native_macroexpand_1_apply(f: *const Function, args: List) 
     native_macroexpand_1_invoke(f, args.first())
 }
 
+unsafe extern "C" fn native_error_invoke(_: *const Function, msg: Object) -> ! {
+    let s = msg.unpack_string();
+    let rust_str = CStr::from_ptr(s).to_str().unwrap().to_string();
+    exceptions::raise_error(rust_str)
+}
+
+unsafe extern "C" fn native_error_apply(f: *const Function, args: List) -> ! {
+    native_error_invoke(f, args.first())
+}
+
+
 pub fn init() {
     init_symbol_fn(
         native_add_invoke as *const c_void,
@@ -410,6 +421,14 @@ pub fn init() {
         native_macroexpand_1_apply as *const c_void,
         "macroexpand-1",
         &["form"],
+        false,
+    );
+
+    init_symbol_fn(
+        native_error_invoke as *const c_void,
+        native_error_apply as *const c_void,
+        "error",
+        &["msg"],
         false,
     );
 }
