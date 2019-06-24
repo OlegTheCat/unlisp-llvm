@@ -550,7 +550,7 @@ pub unsafe fn runtime_object_to_form(t_obj: defs::Object) -> Form {
                 .expect("string conversion failed")
                 .to_string(),
         ),
-        defs::ObjType::String => Form::Symbol(
+        defs::ObjType::String => Form::String(
             CStr::from_ptr(t_obj.unpack_string())
                 .to_str()
                 .expect("string conversion failed")

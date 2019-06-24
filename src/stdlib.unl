@@ -284,3 +284,24 @@
 
 (defun range (to)
   (range-inner to ()))
+
+(defmacro dbgp (str-prefix & forms)
+  (qquote
+   (let ()
+     (unqs
+      (mapcar
+       (lambda (form)
+         (qquote
+          (let ()
+            (when (unq str-prefix)
+              (stdout-write (unq str-prefix))
+              (stdout-write " "))
+            (print (quote (unq form)))
+            (stdout-write " = ")
+            (println (unq form)))))
+       forms)))))
+
+(defmacro dbg (& forms)
+  (qquote (dbgp nil (unqs forms))))
+
+(defmacro comment (& body))

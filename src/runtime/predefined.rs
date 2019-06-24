@@ -6,6 +6,7 @@ use crate::error::RuntimeError;
 use libc::{c_char, c_void};
 use std::ffi::{CStr, CString};
 use std::mem;
+use std::io::Write;
 
 fn arr_to_raw(arr: &[&str]) -> *const *const c_char {
     let vec: Vec<_> = arr
@@ -320,6 +321,34 @@ unsafe extern "C" fn native_error_apply(f: *const Function, args: List) -> ! {
     native_error_invoke(f, args.first())
 }
 
+unsafe extern "C" fn native_print_invoke(_: *const Function, x: Object) -> Object {
+    print!("{}", x);
+    Object::nil()
+}
+
+unsafe extern "C" fn native_print_apply(f: *const Function, args: List) -> Object {
+    native_print_invoke(f, args.first())
+}
+
+unsafe extern "C" fn native_println_invoke(_: *const Function, x: Object) -> Object {
+    println!("{}", x);
+    Object::nil()
+}
+
+unsafe extern "C" fn native_println_apply(f: *const Function, args: List) -> Object {
+    native_println_invoke(f, args.first())
+}
+
+unsafe extern "C" fn native_stdout_write_invoke(_: *const Function, s: Object) -> Object {
+    let s = s.unpack_string();
+    let rust_str = CStr::from_ptr(s).to_str().unwrap().to_string();
+    let _ = write!(std::io::stdout(), "{}", rust_str).map_err(|e| exceptions::raise_error(format!("{}", e)));
+    Object::nil()
+}
+
+unsafe extern "C" fn native_stdout_write_apply(f: *const Function, args: List) -> Object {
+    native_stdout_write_invoke(f, args.first())
+}
 
 pub fn init() {
     init_symbol_fn(
@@ -429,6 +458,30 @@ pub fn init() {
         native_error_apply as *const c_void,
         "error",
         &["msg"],
+        false,
+    );
+
+    init_symbol_fn(
+        native_print_invoke as *const c_void,
+        native_print_apply as *const c_void,
+        "print",
+        &["x"],
+        false,
+    );
+
+    init_symbol_fn(
+        native_println_invoke as *const c_void,
+        native_println_apply as *const c_void,
+        "println",
+        &["x"],
+        false,
+    );
+
+    init_symbol_fn(
+        native_stdout_write_invoke as *const c_void,
+        native_stdout_write_apply as *const c_void,
+        "stdout-write",
+        &["s"],
         false,
     );
 }
