@@ -84,7 +84,7 @@ pub fn compile_top_level_hirs(ctx: &mut CodegenContext, hirs: &[HIR]) -> GenResu
     // ctx.builder.build_return(Some(&val));
 
     ctx.verify_or_panic(&function, "top-level");
-    ctx.pass_manager.run_on_function(&function);
+    ctx.pass_manager.run_on(&function);
 
     Ok(fn_name)
 }

@@ -6,7 +6,7 @@ edition = "2018"
 
 [dependencies]
 libc = "0.2"
-inkwell = { path = "../inkwell-fork" }
+inkwell = { git = "https://github.com/OlegTheCat/inkwell" }
 
 [build-dependencies]
 cc = "1.0"

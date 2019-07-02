@@ -23,7 +23,7 @@ pub type CompiledFn = JitFunction<unsafe extern "C" fn() -> runtime::defs::Objec
 pub struct CodegenContext<'a> {
     pub llvm_ctx: &'a Context,
     pub builder: Builder,
-    pub pass_manager: PassManager,
+    pub pass_manager: PassManager<FunctionValue>,
 
     execution_engine: ExecutionEngine,
     counter: u64,
@@ -44,8 +44,8 @@ impl<'a> CodegenContext<'a> {
         format!("{}__unlisp_{}", s.into(), self.gen_unique_int())
     }
 
-    fn make_pass_manager(module: &Module) -> PassManager {
-        let fpm = PassManager::create_for_function(module);
+    fn make_pass_manager(module: &Module) -> PassManager<FunctionValue> {
+        let fpm = PassManager::<FunctionValue>::create(module);
 
         // fpm.add_instruction_combining_pass();
         // fpm.add_reassociate_pass();
