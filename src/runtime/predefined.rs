@@ -45,8 +45,8 @@ fn init_symbol_fn(
     unsafe { (*sym).function = func };
 }
 
-unsafe extern "C" fn native_add_invoke(_: *const Function, n: u64, args: ...) -> Object {
-    let args = va_list_to_obj_array(n, args);
+unsafe extern "C" fn native_add_invoke(_: *const Function, n: u64, mut args: ...) -> Object {
+    let args = va_list_to_obj_array(n, args.as_va_list());
     let mut sum = 0;
 
     for i in 0..n {
@@ -69,8 +69,8 @@ unsafe extern "C" fn native_add_apply(_: *const Function, args: List) -> Object 
     Object::from_int(sum)
 }
 
-unsafe extern "C" fn native_sub_invoke(_: *const Function, n: u64, x: Object, args: ...) -> Object {
-    let args = va_list_to_obj_array(n, args);
+unsafe extern "C" fn native_sub_invoke(_: *const Function, n: u64, x: Object, mut args: ...) -> Object {
+    let args = va_list_to_obj_array(n, args.as_va_list());
     let mut result = x.unpack_int();
 
     for i in 0..n {
@@ -185,10 +185,10 @@ unsafe extern "C" fn native_apply_invoke(
     _: *const Function,
     n: u64,
     f: Object,
-    args: ...
+    mut args: ...
 ) -> Object {
     let f = f.unpack_function();
-    let args_arr = va_list_to_obj_array(n, args);
+    let args_arr = va_list_to_obj_array(n, args.as_va_list());
     let last_arg = (*args_arr.offset((n as isize) - 1)).unpack_list();
     let args_list = obj_array_to_list(n - 1, args_arr, Some(last_arg));
 
