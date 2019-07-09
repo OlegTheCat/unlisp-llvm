@@ -127,7 +127,7 @@ nil
 ```
 >>> (apply (symbol-function (quote +)) (quote (1 2)))
 3
->>> (apply (symbol-function (quote +)) 1 2 (quote 3 4))
+>>> (apply (symbol-function (quote +)) 1 2 (quote (3 4)))
 10
 ```
 
