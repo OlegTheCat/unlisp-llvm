@@ -1,6 +1,6 @@
 # unlisp-llvm
 
-WIP LLVM-based compiler for a toy Lisp language. Current goal is to reach feature-parity with [interpreted version](https://github.com/OlegTheCat/unlisp).
+LLVM-based compiler for a toy Lisp language. It has almost the same feature set as it's [interpreted version](https://github.com/OlegTheCat/unlisp).
 
 Each expression is compiled to LLVM-IR, which is in turn is compiled to a machine code and then executed.
 
@@ -141,6 +141,49 @@ nil
 nil
 >>> (bar 2)
 3
+```
+
+### "Standard library"
+
+It is located in file [`src/stdlib.unl`](https://github.com/OlegTheCat/unlisp-llvm/blob/master/src/stdlib.unl).
+
+### Macros & quasiquote
+
+Quasiquote [is implemented](https://github.com/olegthecat/unlisp-llvm/blob/14d6cc4605fac2982a7e3b2d3521ce41d1015fdb/src/stdlib.unl#L82-L146) using Unlisp's macro system. There are three macros, namely `qquote` which is quasiquote (like a backtick in other popular lisps), `unq` which stands for "unquote", and `unqs` which stands for "unquote-splicing".
+
+```
+>>> (defmacro strange-let (bindings & body)
+  (reduce
+   (lambda (acc binding)
+     (let ((sym (first binding))
+           (val (first (rest binding))))
+       (qquote
+        (funcall
+         (lambda ((unq sym))
+           (unq acc))
+         (unq val)))))
+   (qquote (let () (unqs body)))
+   (reverse bindings)))
+nil
+>>> (strange-let ((x 1) (y 2) (z 3)) (+ x y z))
+6
+>>> (macroexpand-1 (quote (strange-let ((x 1) (y 2) (z 3)) (+ x y z))))
+(funcall (lambda (x) (funcall (lambda (y) (funcall (lambda (z) (let nil (+ x y z))) 3)) 2)) 1)
+```
+
+### Printing and writing to stdout
+
+```
+>>> (print 1)
+11
+>>> (println 1)
+1
+1
+>>> (println "foo")
+"foo"
+"foo"
+>>> (stdout-write "foo")
+foonil
 ```
 
 ### Error reporting
