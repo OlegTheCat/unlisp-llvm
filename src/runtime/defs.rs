@@ -391,7 +391,6 @@ pub fn gen_defs(ctx: &Context, module: &Module) {
     unlisp_rt_object_is_nil_gen_def(ctx, module);
     unlisp_rt_nil_object_gen_def(ctx, module);
     unlisp_rt_check_arity_gen_def(ctx, module);
-    malloc_gen_def(ctx, module);
     va_gen_def(ctx, module);
     unlisp_rt_va_list_into_list_gen_def(ctx, module);
     unlisp_rt_list_first_gen_def(ctx, module);
@@ -419,13 +418,6 @@ fn va_gen_def(ctx: &Context, module: &Module) {
     let va_start_end_ty = ctx.void_type().fn_type(&[i8_ptr_ty.into()], false);
     module.add_function("llvm.va_start", va_start_end_ty, Some(Linkage::External));
     module.add_function("llvm.va_end", va_start_end_ty, Some(Linkage::External));
-}
-
-fn malloc_gen_def(ctx: &Context, module: &Module) {
-    let i8_ptr_ty = ctx.i8_type().ptr_type(AddressSpace::Generic);
-    let i32_ty = ctx.i32_type();
-    let malloc_fn_ty = i8_ptr_ty.fn_type(&[i32_ty.into()], false);
-    module.add_function("malloc", malloc_fn_ty, Some(Linkage::External));
 }
 
 #[no_mangle]

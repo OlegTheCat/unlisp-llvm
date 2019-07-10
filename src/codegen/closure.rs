@@ -325,33 +325,7 @@ pub fn compile_closure(ctx: &mut CodegenContext, closure: &Closure) -> CompileRe
     let invoke_fn = codegen_invoke_fn(ctx, closure, struct_ty, raw_fn);
     let apply_to_fn = codegen_apply_to_fn(ctx, closure, struct_ty, raw_fn);
 
-    let struct_ptr_ty = struct_ty.ptr_type(AddressSpace::Generic);
-    let struct_ptr_null = struct_ptr_ty.const_null();
-
-    let size = unsafe {
-        ctx.builder.build_gep(
-            struct_ptr_null,
-            &[ctx.llvm_ctx.i32_type().const_int(1, false)],
-            "size",
-        )
-    };
-
-    let size = ctx
-        .builder
-        .build_ptr_to_int(size, ctx.llvm_ctx.i32_type(), "size_i32");
-
-    let malloc = ctx.lookup_known_fn("malloc");
-    let struct_ptr = ctx
-        .builder
-        .build_call(malloc, &[size.into()], "malloc")
-        .try_as_basic_value()
-        .left()
-        .unwrap()
-        .into_pointer_value();
-    let struct_ptr = ctx
-        .builder
-        .build_bitcast(struct_ptr, struct_ptr_ty, "closure_ptr")
-        .into_pointer_value();
+    let struct_ptr = ctx.builder.build_malloc(struct_ty, "closure_ptr");
 
     let struct_ty_ptr = unsafe { ctx.builder.build_struct_gep(struct_ptr, 0, "ty_ptr") };
 

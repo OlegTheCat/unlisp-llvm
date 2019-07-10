@@ -283,7 +283,7 @@
                    (cons to acc))))
 
 (defun range (to)
-  (range-inner to ()))
+  (range-inner (- to 1) ()))
 
 (defmacro dbgp (str-prefix & forms)
   (qquote
