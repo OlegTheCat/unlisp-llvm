@@ -159,7 +159,10 @@ impl<'a, T: Read> Lexer<'a, T> {
             }
 
             '"' => Token::StringLiteral(self.read_string_literal()?),
-            _ => Err(error::Error::new_syntax_error(format!("unexpexted char {}", c)))?,
+            _ => Err(error::Error::new_syntax_error(format!(
+                "unexpexted char {}",
+                c
+            )))?,
         };
 
         Ok(Some(tok))

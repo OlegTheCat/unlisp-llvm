@@ -38,9 +38,7 @@ extern "C" {
     fn longjmp(buf: *const i8) -> !;
 }
 
-pub unsafe fn run_with_global_ex_handler<F: FnOnce() -> Object>(
-    f: F,
-) -> Result<Object, Error> {
+pub unsafe fn run_with_global_ex_handler<F: FnOnce() -> Object>(f: F) -> Result<Object, Error> {
     let mut prev_handler: JmpBuf = mem::zeroed();
 
     ptr::copy_nonoverlapping(
@@ -52,7 +50,9 @@ pub unsafe fn run_with_global_ex_handler<F: FnOnce() -> Object>(
     let result = if setjmp(glob_jmp_buf_ptr()) == 0 {
         Ok(f())
     } else {
-        Err(Error::new_runtime_error((*(ERR_MSG_PTR as *mut String)).clone()))
+        Err(Error::new_runtime_error(
+            (*(ERR_MSG_PTR as *mut String)).clone(),
+        ))
     };
 
     ptr::copy_nonoverlapping(
@@ -113,8 +113,11 @@ pub unsafe extern "C" fn raise_arity_error(name: *const c_char, _expected: u64, 
 }
 
 #[used]
-static RAISE_ARITY_ERROR: unsafe extern "C" fn(name: *const c_char, expected: u64, actual: u64) -> ! =
-    raise_arity_error;
+static RAISE_ARITY_ERROR: unsafe extern "C" fn(
+    name: *const c_char,
+    expected: u64,
+    actual: u64,
+) -> ! = raise_arity_error;
 
 fn raise_arity_error_gen_def(ctx: &Context, module: &Module) {
     let void_ty = ctx.void_type();

@@ -4,20 +4,20 @@ use std::fmt;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ErrorType {
     Syntax,
-    Runtime
+    Runtime,
 }
 
 #[derive(Debug, Clone)]
 pub struct Error {
     pub message: String,
-    pub ty: ErrorType
+    pub ty: ErrorType,
 }
 
 impl Error {
     pub fn new(message: impl Into<String>, ty: ErrorType) -> Self {
         Self {
             message: message.into(),
-            ty: ty
+            ty: ty,
         }
     }
 

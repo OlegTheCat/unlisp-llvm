@@ -3,11 +3,11 @@
 
 use inkwell::context::Context;
 
+use std::env;
+use std::error::Error;
 use std::fs;
 use std::io;
 use std::io::{Read, Write};
-use std::env;
-use std::error::Error;
 
 mod codegen;
 mod error;
@@ -67,36 +67,31 @@ fn repl(ctx: &mut CodegenContext, dump_compiled: bool) {
     prompt();
     loop {
         match read_and_parse(&mut reader) {
-            Ok(Some(hir)) => {
-                unsafe {
-                    match ctx.compile_hirs(&[hir]) {
-                        Ok(compiled_fn) => {
-                            if dump_compiled {
-                                eprintln!("Expression compiled to LLVM IR:");
-                                ctx.get_module().print_to_stderr();
-                            }
-                            match runtime::exceptions::run_with_global_ex_handler(|| {
-                                compiled_fn.call()
-                            }) {
-                                Ok(obj) => println!("{}", obj),
-                                Err(err) => eprintln!("runtime error: {}", err),
-                            }
+            Ok(Some(hir)) => unsafe {
+                match ctx.compile_hirs(&[hir]) {
+                    Ok(compiled_fn) => {
+                        if dump_compiled {
+                            eprintln!("Expression compiled to LLVM IR:");
+                            ctx.get_module().print_to_stderr();
                         }
-                        Err(err) => {
-                            eprintln!("compilation error: {}", err);
+                        match runtime::exceptions::run_with_global_ex_handler(|| compiled_fn.call())
+                        {
+                            Ok(obj) => println!("{}", obj),
+                            Err(err) => eprintln!("runtime error: {}", err),
                         }
                     }
+                    Err(err) => {
+                        eprintln!("compilation error: {}", err);
+                    }
                 }
-            }
+            },
             Ok(None) => break,
-            Err(e) => {
-                match e.downcast_ref::<error::Error>() {
-                    Some(e) if e.ty == error::ErrorType::Runtime => {
-                        eprintln!("macroexpansion error: {}", e)
-                    }
-                    _ => eprintln!("reader error: {}", e)
+            Err(e) => match e.downcast_ref::<error::Error>() {
+                Some(e) if e.ty == error::ErrorType::Runtime => {
+                    eprintln!("macroexpansion error: {}", e)
                 }
-            }
+                _ => eprintln!("reader error: {}", e),
+            },
         }
         ctx.reinitialize();
         prompt();
@@ -109,7 +104,7 @@ fn main() {
     for arg in env::args().skip(1) {
         match arg.as_str() {
             "--dump-compiled" => dump_compiled_ir = true,
-            _ => eprintln!("ignoring unknown option: {}", arg)
+            _ => eprintln!("ignoring unknown option: {}", arg),
         }
     }
 

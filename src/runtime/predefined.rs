@@ -5,8 +5,8 @@ use crate::error::Error;
 
 use libc::{c_char, c_void};
 use std::ffi::{CStr, CString};
-use std::mem;
 use std::io::Write;
+use std::mem;
 
 fn arr_to_raw(arr: &[&str]) -> *const *const c_char {
     let vec: Vec<_> = arr
@@ -69,7 +69,12 @@ unsafe extern "C" fn native_add_apply(_: *const Function, args: List) -> Object 
     Object::from_int(sum)
 }
 
-unsafe extern "C" fn native_sub_invoke(_: *const Function, n: u64, x: Object, mut args: ...) -> Object {
+unsafe extern "C" fn native_sub_invoke(
+    _: *const Function,
+    n: u64,
+    x: Object,
+    mut args: ...
+) -> Object {
     let args = va_list_to_obj_array(n, args.as_va_list());
     let mut result = x.unpack_int();
 
@@ -342,7 +347,8 @@ unsafe extern "C" fn native_println_apply(f: *const Function, args: List) -> Obj
 unsafe extern "C" fn native_stdout_write_invoke(_: *const Function, s: Object) -> Object {
     let s = s.unpack_string();
     let rust_str = CStr::from_ptr(s).to_str().unwrap().to_string();
-    let _ = write!(std::io::stdout(), "{}", rust_str).map_err(|e| exceptions::raise_error(format!("{}", e)));
+    let _ = write!(std::io::stdout(), "{}", rust_str)
+        .map_err(|e| exceptions::raise_error(format!("{}", e)));
     Object::nil()
 }
 

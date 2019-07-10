@@ -117,9 +117,9 @@ fn forms_to_hir(forms: &Vec<Form>) -> Result<HIR, Box<dyn Error>> {
         Ok(HIR::Literal(Literal::ListLiteral(vec![])))
     } else {
         match &forms[0] {
-            Form::T | Form::Integer(_) | Form::String(_) | Form::List(_) => {
-                Ok(Err(error::Error::new_syntax_error("illegal function call"))?)
-            }
+            Form::T | Form::Integer(_) | Form::String(_) | Form::List(_) => Ok(Err(
+                error::Error::new_syntax_error("illegal function call"),
+            )?),
 
             Form::Symbol(s) if is(s, "quote") => {
                 let quote = Quote {
@@ -163,7 +163,10 @@ fn forms_to_hir(forms: &Vec<Form>) -> Result<HIR, Box<dyn Error>> {
 
                 forms
                     .get(4)
-                    .map(|_| Err(error::Error::new_syntax_error("too many clauses in if")) as Result<(), _>)
+                    .map(|_| {
+                        Err(error::Error::new_syntax_error("too many clauses in if"))
+                            as Result<(), _>
+                    })
                     .transpose()?;
 
                 let if_hir = If {
@@ -185,21 +188,26 @@ fn forms_to_hir(forms: &Vec<Form>) -> Result<HIR, Box<dyn Error>> {
                 let mut collected_bindings = vec![];
 
                 for binding in bindings.iter() {
-                    let binding = to_list(binding)
-                        .ok_or_else(|| error::Error::new_syntax_error("let binding is not a list"))?;
+                    let binding = to_list(binding).ok_or_else(|| {
+                        error::Error::new_syntax_error("let binding is not a list")
+                    })?;
                     let sym = binding
                         .get(0)
                         .ok_or_else(|| error::Error::new_syntax_error("empty binding clause"))?;
-                    let sym = to_symbol(sym)
-                        .ok_or_else(|| error::Error::new_syntax_error("not a symbol in binding clause"))?;
+                    let sym = to_symbol(sym).ok_or_else(|| {
+                        error::Error::new_syntax_error("not a symbol in binding clause")
+                    })?;
 
-                    let val_form = binding
-                        .get(1)
-                        .ok_or_else(|| error::Error::new_syntax_error("no value in binding clause"))?;
+                    let val_form = binding.get(1).ok_or_else(|| {
+                        error::Error::new_syntax_error("no value in binding clause")
+                    })?;
 
                     binding
                         .get(3)
-                        .map(|_| Err(error::Error::new_syntax_error("malformed let binding")) as Result<(), _>)
+                        .map(|_| {
+                            Err(error::Error::new_syntax_error("malformed let binding"))
+                                as Result<(), _>
+                        })
                         .transpose()?;
 
                     let val_form = form_to_hir(val_form)?;
@@ -225,15 +233,16 @@ fn forms_to_hir(forms: &Vec<Form>) -> Result<HIR, Box<dyn Error>> {
                 fn parse_arglist(
                     arglist: &Form,
                 ) -> Result<(Vec<String>, Option<String>), error::Error> {
-                    let arglist = to_list(arglist)
-                        .ok_or_else(|| error::Error::new_syntax_error("not a list in lambda arglist"))?;
+                    let arglist = to_list(arglist).ok_or_else(|| {
+                        error::Error::new_syntax_error("not a list in lambda arglist")
+                    })?;
 
                     let arglist = arglist
                         .into_iter()
                         .map(|arg| {
-                            to_symbol(arg)
-                                .cloned()
-                                .ok_or_else(|| error::Error::new_syntax_error("not a symbol in arglist"))
+                            to_symbol(arg).cloned().ok_or_else(|| {
+                                error::Error::new_syntax_error("not a symbol in arglist")
+                            })
                         })
                         .collect::<Result<Vec<_>, _>>()?;
 
@@ -249,7 +258,9 @@ fn forms_to_hir(forms: &Vec<Form>) -> Result<HIR, Box<dyn Error>> {
                         None
                     } else {
                         if restargs.len() != 1 {
-                            return Err(error::Error::new_syntax_error("wrong syntax near '&' in lambda"));
+                            return Err(error::Error::new_syntax_error(
+                                "wrong syntax near '&' in lambda",
+                            ));
                         } else {
                             restargs.into_iter().next()
                         }
@@ -265,9 +276,9 @@ fn forms_to_hir(forms: &Vec<Form>) -> Result<HIR, Box<dyn Error>> {
                 match name_or_arglist {
                     Form::Symbol(l_name) => {
                         name = Some(l_name.clone());
-                        let arglist = forms
-                            .get(2)
-                            .ok_or_else(|| error::Error::new_syntax_error("no arglist in lambda"))?;
+                        let arglist = forms.get(2).ok_or_else(|| {
+                            error::Error::new_syntax_error("no arglist in lambda")
+                        })?;
                         parsed_arglist = parse_arglist(arglist)?;
                         body = forms_to_hirs(&forms[3..])?;
                     }
@@ -277,7 +288,11 @@ fn forms_to_hir(forms: &Vec<Form>) -> Result<HIR, Box<dyn Error>> {
                         body = forms_to_hirs(&forms[2..])?;
                     }
 
-                    _ => return Err(error::Error::new_syntax_error("not a list in lambda arglist"))?,
+                    _ => {
+                        return Err(error::Error::new_syntax_error(
+                            "not a list in lambda arglist",
+                        ))?
+                    }
                 };
 
                 let (simple_args, restarg) = parsed_arglist;
