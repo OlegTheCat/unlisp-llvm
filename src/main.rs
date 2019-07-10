@@ -7,6 +7,7 @@ use std::error::Error;
 use std::fs;
 use std::io;
 use std::io::{Read, Write};
+use std::env;
 
 mod codegen;
 mod error;
@@ -53,7 +54,7 @@ pub fn eval_stdlib(ctx: &mut CodegenContext) {
     }
 }
 
-fn repl(ctx: &mut CodegenContext) {
+fn repl(ctx: &mut CodegenContext, dump_compiled: bool) {
     let mut stdin = io::stdin();
 
     let prompt = || {
@@ -70,17 +71,19 @@ fn repl(ctx: &mut CodegenContext) {
                 unsafe {
                     match ctx.compile_hirs(&[hir]) {
                         Ok(compiled_fn) => {
-                            // println!("Expression compiled to LLVM IR:");
-                            // ctx.get_module().print_to_stderr();
+                            if dump_compiled {
+                                eprintln!("Expression compiled to LLVM IR:");
+                                ctx.get_module().print_to_stderr();
+                            }
                             match runtime::exceptions::run_with_global_ex_handler(|| {
                                 compiled_fn.call()
                             }) {
                                 Ok(obj) => println!("{}", obj),
-                                Err(err) => println!("runtime error: {}", err),
+                                Err(err) => eprintln!("runtime error: {}", err),
                             }
                         }
                         Err(err) => {
-                            println!("compilation error: {}", err);
+                            eprintln!("compilation error: {}", err);
                         }
                     }
                 }
@@ -88,8 +91,8 @@ fn repl(ctx: &mut CodegenContext) {
             Ok(None) => break,
             Err(e) => {
                 match e.downcast_ref::<error::RuntimeError>() {
-                    Some(_) => println!("macroexpansion error: {}", e),
-                    None => println!("reader error: {}", e)
+                    Some(_) => eprintln!("macroexpansion error: {}", e),
+                    None => eprintln!("reader error: {}", e)
                 }
             }
         }
@@ -99,6 +102,15 @@ fn repl(ctx: &mut CodegenContext) {
 }
 
 fn main() {
+    let mut dump_compiled_ir = false;
+
+    for arg in env::args().skip(1) {
+        match arg.as_str() {
+            "--dump-compiled" => dump_compiled_ir = true,
+            _ => eprintln!("ignoring unknown option: {}", arg)
+        }
+    }
+
     runtime::symbols::init();
     runtime::predefined::init();
 
@@ -107,5 +119,5 @@ fn main() {
 
     eval_stdlib(&mut codegen_ctx);
 
-    repl(&mut codegen_ctx);
+    repl(&mut codegen_ctx, dump_compiled_ir);
 }

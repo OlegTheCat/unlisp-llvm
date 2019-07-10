@@ -5,6 +5,7 @@ LLVM-based compiler for a toy Lisp language. It has almost the same feature set 
 Each expression is compiled to LLVM-IR, which is in turn is compiled to a machine code and then executed.
 
 ```
+$ rlwrap cargo run -- --dump-compiled
 >>> (+ 1 2)
 Expression compiled to LLVM IR:
 ; ModuleID = 'mod_1'
