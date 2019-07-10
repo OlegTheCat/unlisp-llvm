@@ -1,4 +1,4 @@
-use crate::error::SyntaxError;
+use crate::error;
 use crate::pushback_reader::PushbackReader;
 use std::error::Error;
 use std::io;
@@ -159,7 +159,7 @@ impl<'a, T: Read> Lexer<'a, T> {
             }
 
             '"' => Token::StringLiteral(self.read_string_literal()?),
-            _ => Err(SyntaxError::new(format!("unexpexted char {}", c)))?,
+            _ => Err(error::Error::new_syntax_error(format!("unexpexted char {}", c)))?,
         };
 
         Ok(Some(tok))

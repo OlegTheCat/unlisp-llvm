@@ -1,4 +1,4 @@
-use crate::error::SyntaxError;
+use crate::error;
 use crate::lexer::Lexer;
 use crate::lexer::Token;
 use crate::repr::Form;
@@ -72,7 +72,7 @@ impl<'a, T: Read + 'a> Reader<'a, T> {
             Some(form) => form,
             None => match tok {
                 Token::LeftPar => self.read_list_form()?,
-                Token::RightPar => Err(SyntaxError::new("unbalanced parens"))?,
+                Token::RightPar => Err(error::Error::new_syntax_error("unbalanced parens"))?,
                 tok => panic!("unexpected token {:?}", tok),
             },
         };

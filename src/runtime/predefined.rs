@@ -1,7 +1,7 @@
 use super::defs::*;
 use super::exceptions;
 use super::symbols;
-use crate::error::RuntimeError;
+use crate::error::Error;
 
 use libc::{c_char, c_void};
 use std::ffi::{CStr, CString};
@@ -262,7 +262,7 @@ unsafe extern "C" fn native_symbolp_apply(f: *const Function, args: List) -> Obj
     native_symbolp_invoke(f, args.first())
 }
 
-pub unsafe fn call_macro(f: *mut Function, args: List) -> Result<Object, RuntimeError> {
+pub unsafe fn call_macro(f: *mut Function, args: List) -> Result<Object, Error> {
     assert!((*f).is_macro);
 
     let apply_fn: unsafe extern "C" fn(*const Function, List) -> Object =

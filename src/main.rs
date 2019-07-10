@@ -3,11 +3,11 @@
 
 use inkwell::context::Context;
 
-use std::error::Error;
 use std::fs;
 use std::io;
 use std::io::{Read, Write};
 use std::env;
+use std::error::Error;
 
 mod codegen;
 mod error;
@@ -90,9 +90,11 @@ fn repl(ctx: &mut CodegenContext, dump_compiled: bool) {
             }
             Ok(None) => break,
             Err(e) => {
-                match e.downcast_ref::<error::RuntimeError>() {
-                    Some(_) => eprintln!("macroexpansion error: {}", e),
-                    None => eprintln!("reader error: {}", e)
+                match e.downcast_ref::<error::Error>() {
+                    Some(e) if e.ty == error::ErrorType::Runtime => {
+                        eprintln!("macroexpansion error: {}", e)
+                    }
+                    _ => eprintln!("reader error: {}", e)
                 }
             }
         }

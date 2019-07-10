@@ -9,7 +9,7 @@ use inkwell::module::{Linkage, Module};
 use inkwell::AddressSpace;
 use libc::c_char;
 
-use crate::error::RuntimeError;
+use crate::error::Error;
 
 const JMP_BUF_SIZE: usize = mem::size_of::<u32>() * 40;
 
@@ -40,7 +40,7 @@ extern "C" {
 
 pub unsafe fn run_with_global_ex_handler<F: FnOnce() -> Object>(
     f: F,
-) -> Result<Object, RuntimeError> {
+) -> Result<Object, Error> {
     let mut prev_handler: JmpBuf = mem::zeroed();
 
     ptr::copy_nonoverlapping(
@@ -52,7 +52,7 @@ pub unsafe fn run_with_global_ex_handler<F: FnOnce() -> Object>(
     let result = if setjmp(glob_jmp_buf_ptr()) == 0 {
         Ok(f())
     } else {
-        Err(RuntimeError::new((*(ERR_MSG_PTR as *mut String)).clone()))
+        Err(Error::new_runtime_error((*(ERR_MSG_PTR as *mut String)).clone()))
     };
 
     ptr::copy_nonoverlapping(
