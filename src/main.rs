@@ -87,10 +87,10 @@ fn repl(ctx: &mut CodegenContext, dump_compiled: bool) {
             },
             Ok(None) => break,
             Err(e) => match e.downcast_ref::<error::Error>() {
-                Some(e) if e.ty == error::ErrorType::Runtime => {
-                    eprintln!("macroexpansion error: {}", e)
+                Some(e) if e.ty == error::ErrorType::Syntax => {
+                    eprintln!("reader error: {}", e)
                 }
-                _ => eprintln!("reader error: {}", e),
+                _ => eprintln!("macroexpansion error: {}", e)
             },
         }
         ctx.reinitialize();

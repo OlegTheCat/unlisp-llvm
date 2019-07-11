@@ -161,14 +161,14 @@ unsafe extern "C" fn native_rest_apply(f: *const Function, args: List) -> Object
     native_rest_invoke(f, args.first())
 }
 
-extern "C" fn native_first_invoke(_: *const Function, list: Object) -> Object {
+unsafe extern "C" fn native_first_invoke(_: *const Function, list: Object) -> Object {
     let list = list.unpack_list();
-    let len = unsafe { (*list).len };
+    let len = (*list).len;
 
     if len == 0 {
-        panic!("cannot do first on empty list");
+        exceptions::raise_error("cannot do first on an empty list".to_string());
     } else {
-        unsafe { (*(*(*list).node).val).clone() }
+        (*(*(*list).node).val).clone()
     }
 }
 

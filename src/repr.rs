@@ -326,10 +326,12 @@ fn forms_to_hir(forms: &Vec<Form>) -> Result<HIR, Box<dyn Error>> {
                     let arg_objs_list = forms[1..]
                         .iter()
                         .map(form_to_runtime_object)
+                        .collect::<Result<Vec<_>, _>>()?
+                        .into_iter()
                         .rev()
                         .fold(defs::List::empty(), |acc, obj| acc.cons(obj));
                     let expanded = predefined::call_macro(sym_fn, arg_objs_list)?;
-                    call_hir = form_to_hir(&runtime_object_to_form(expanded))?;
+                    call_hir = form_to_hir(&runtime_object_to_form(expanded)?)?;
                 }
 
                 Ok(call_hir)
@@ -523,8 +525,8 @@ pub fn convert_into_closures(hir: &HIR) -> HIR {
     }
 }
 
-pub fn form_to_runtime_object(form: &Form) -> defs::Object {
-    match form {
+pub fn form_to_runtime_object(form: &Form) -> Result<defs::Object, error::Error> {
+    let obj = match form {
         Form::Symbol(s) => defs::Object::from_symbol(symbols::get_or_intern_symbol(s.clone())),
         Form::Integer(i) => defs::Object::from_int(*i),
         Form::String(s) => {
@@ -536,29 +538,36 @@ pub fn form_to_runtime_object(form: &Form) -> defs::Object {
             let rt_list = list
                 .iter()
                 .map(form_to_runtime_object)
+                .collect::<Result<Vec<_>, _>>()?
+                .into_iter()
                 .rev()
                 .fold(defs::List::empty(), |acc, obj| acc.cons(obj));
+
             defs::Object::from_list(Box::into_raw(Box::new(rt_list)))
         }
-        Form::T => panic!("t literal is not supported yet"),
-    }
+        Form::T => Err(error::Error::new_unsupported_error("t literal is not supported yet"))?,
+    };
+
+    Ok(obj)
 }
 
-pub unsafe fn runtime_object_to_form(t_obj: defs::Object) -> Form {
-    match t_obj.ty {
+pub unsafe fn runtime_object_to_form(t_obj: defs::Object) -> Result<Form, error::Error> {
+    let form = match t_obj.ty {
         defs::ObjType::Int64 => Form::Integer(t_obj.unpack_int()),
         defs::ObjType::List => {
             let mut converted = vec![];
             let mut list = t_obj.unpack_list();
 
             while (*list).len != 0 {
-                converted.push(runtime_object_to_form((*list).first()));
+                converted.push(runtime_object_to_form((*list).first())?);
                 list = (*list).rest_ptr();
             }
 
             Form::List(converted)
         }
-        defs::ObjType::Function => panic!("embedding functions in code is not supported yet"),
+        defs::ObjType::Function => {
+            Err(error::Error::new_unsupported_error("embedding functions in code is not supported yet"))?
+        }
         defs::ObjType::Symbol => Form::Symbol(
             CStr::from_ptr((*t_obj.unpack_symbol()).name)
                 .to_str()
@@ -571,5 +580,7 @@ pub unsafe fn runtime_object_to_form(t_obj: defs::Object) -> Form {
                 .expect("string conversion failed")
                 .to_string(),
         ),
-    }
+    };
+
+    Ok(form)
 }

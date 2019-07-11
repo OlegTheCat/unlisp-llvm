@@ -3,6 +3,7 @@ use inkwell::values::BasicValueEnum;
 
 use super::common::*;
 use super::context::CodegenContext;
+use crate::error;
 
 fn compile_integer(ctx: &mut CodegenContext, i: i64) -> BasicValueEnum {
     let ty = ctx.llvm_ctx.i64_type();
@@ -47,6 +48,6 @@ pub fn compile_literal(ctx: &mut CodegenContext, literal: &Literal) -> CompileRe
                 .ok_or_else(|| UndefinedSymbol::new(s.as_str()))?;
             Ok(val)
         }
-        Literal::T => panic!("t literal is not yet supported"),
+        Literal::T => Err(error::Error::new_unsupported_error("t literal is not yet supported"))?
     }
 }

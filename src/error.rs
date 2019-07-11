@@ -5,6 +5,7 @@ use std::fmt;
 pub enum ErrorType {
     Syntax,
     Runtime,
+    Unsupported
 }
 
 #[derive(Debug, Clone)]
@@ -19,6 +20,10 @@ impl Error {
             message: message.into(),
             ty: ty,
         }
+    }
+
+    pub fn new_unsupported_error(message: impl Into<String>) -> Self {
+        Self::new(message, ErrorType::Unsupported)
     }
 
     pub fn new_syntax_error(message: impl Into<String>) -> Self {
