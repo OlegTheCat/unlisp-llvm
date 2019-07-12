@@ -245,7 +245,7 @@ unsafe extern "C" fn native_set_macro_apply(f: *const Function, args: List) -> O
 
 unsafe extern "C" fn native_listp_invoke(_: *const Function, x: Object) -> Object {
     if x.ty == ObjType::List {
-        Object::from_int(1)
+        Object::from_symbol(symbols::get_or_intern_symbol("true".to_string()))
     } else {
         Object::nil()
     }
@@ -257,7 +257,7 @@ unsafe extern "C" fn native_listp_apply(f: *const Function, args: List) -> Objec
 
 unsafe extern "C" fn native_symbolp_invoke(_: *const Function, x: Object) -> Object {
     if x.ty == ObjType::Symbol {
-        Object::from_int(1)
+        Object::from_symbol(symbols::get_or_intern_symbol("true".to_string()))
     } else {
         Object::nil()
     }

@@ -14,7 +14,7 @@
 (set-fn
  (quote emptyp)
  (lambda (list)
-   (if list nil 1)))
+   (if list nil (quote true))))
 
 (set-fn
  (quote append)
@@ -38,7 +38,7 @@
 (set-fn
  (quote emptyp)
  (lambda (list)
-   (if list nil 1)))
+   (if list nil (quote true))))
 
 (set-fn
  (quote append)
@@ -76,7 +76,7 @@
 (set-fn
  (quote not)
  (lambda not (x)
-   (if x nil 1)))
+   (if x nil (quote true))))
 
 
 (set-fn
@@ -204,7 +204,7 @@
 
 (defmacro and (& forms)
   (let ((reversed (if (emptyp forms)
-                      (list 111)
+                      (list (quote true))
                       (reverse forms))))
     (reduce
      (lambda (acc form)
