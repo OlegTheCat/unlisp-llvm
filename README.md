@@ -74,7 +74,7 @@ entry3:                                           ; preds = %entry
 ### Build steps
 
 1. Switch to the latest nightly Rust: `rustup update nightly && rustup default nightly`
-1. Install LLVM-7
+1. Install LLVM-7 and make it's binaries available on `PATH`:
    * Ubuntu: `sudo apt install llvm-7-dev`
    * OS X: `brew install llvm@7 && export PATH="/usr/local/opt/llvm@7/bin:$PATH"`
 1. Build & run the project:
