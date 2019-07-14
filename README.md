@@ -69,6 +69,7 @@ entry3:                                           ; preds = %entry
 
 * `rustup`
 * `cargo`
+* `gcc`/`clang`
 * `rlwrap`
 
 ### Build steps
