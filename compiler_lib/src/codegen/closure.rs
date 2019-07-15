@@ -1,5 +1,6 @@
+use crate::error::Error;
 use crate::repr::Closure;
-use crate::runtime::defs::Function;
+use unlisp_rt::defs::Function;
 
 use inkwell::types::{BasicType, StructType};
 use inkwell::values::{BasicValueEnum, FunctionValue};
@@ -394,9 +395,9 @@ pub fn compile_closure(ctx: &mut CodegenContext, closure: &Closure) -> CompileRe
     );
 
     for (i, var) in closure.free_vars.iter().enumerate() {
-        let var_val = ctx
-            .lookup_name(var)
-            .ok_or_else(|| UndefinedSymbol::new(var.as_str()))?;
+        let var_val = ctx.lookup_name(var).ok_or_else(|| {
+            Error::new_compilation_error(format!("undefined symbol: {}", var.as_str()))
+        })?;
 
         let free_var_ptr = unsafe {
             ctx.builder.build_struct_gep(

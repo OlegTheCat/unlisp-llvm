@@ -4,7 +4,7 @@ use std::fmt;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ErrorType {
     Syntax,
-    Runtime,
+    Compilation,
     Unsupported
 }
 
@@ -30,8 +30,8 @@ impl Error {
         Self::new(message, ErrorType::Syntax)
     }
 
-    pub fn new_runtime_error(message: impl Into<String>) -> Self {
-        Self::new(message, ErrorType::Runtime)
+    pub fn new_compilation_error(message: impl Into<String>) -> Self {
+        Self::new(message, ErrorType::Compilation)
     }
 }
 

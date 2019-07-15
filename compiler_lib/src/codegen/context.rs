@@ -1,9 +1,12 @@
-use crate::repr::HIR;
-use crate::runtime;
+use crate::repr::{HIR, Call};
+use crate::runtime_defs;
+use crate::error;
 
 use super::common::*;
 use super::top_level::compile_top_level_hirs;
+use super::call;
 
+use unlisp_rt;
 use inkwell::basic_block::BasicBlock;
 use inkwell::builder::Builder;
 use inkwell::context::Context;
@@ -14,11 +17,11 @@ use inkwell::types::BasicTypeEnum;
 use inkwell::values::{BasicValueEnum, FunctionValue, GlobalValue};
 use inkwell::AddressSpace;
 use inkwell::OptimizationLevel;
-use std::collections::{HashMap, HashSet};
 
+use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
 
-pub type CompiledFn = JitFunction<unsafe extern "C" fn() -> runtime::defs::Object>;
+pub type CompiledFn = JitFunction<unsafe extern "C" fn() -> unlisp_rt::defs::Object>;
 
 pub struct CodegenContext<'a> {
     pub llvm_ctx: &'a Context,
@@ -68,8 +71,7 @@ impl<'a> CodegenContext<'a> {
             .expect("couldn't create execution engine");
         let builder = llvm_ctx.create_builder();
 
-        runtime::defs::gen_defs(llvm_ctx, &module);
-        runtime::exceptions::gen_defs(llvm_ctx, &module);
+        runtime_defs::gen_defs(llvm_ctx, &module);
 
         Self {
             counter: 0,
@@ -94,8 +96,7 @@ impl<'a> CodegenContext<'a> {
             .add_module(&module)
             .expect("couldn't add module to execution engine");
 
-        runtime::defs::gen_defs(self.llvm_ctx, &module);
-        runtime::exceptions::gen_defs(self.llvm_ctx, &module);
+        runtime_defs::gen_defs(self.llvm_ctx, &module);
 
         self.pass_manager.finalize();
         self.pass_manager = Self::make_pass_manager(&module);
@@ -239,8 +240,53 @@ impl<'a> CodegenContext<'a> {
         }
     }
 
+    pub fn codegen_hirs(&mut self, hirs: &[HIR]) -> GenResult<String> {
+        compile_top_level_hirs(self, hirs)
+    }
+
+    pub fn compile_hirs_with_main(&mut self, hirs: &[HIR]) -> GenResult<()> {
+        let code_init_fn_name = self.codegen_hirs(hirs)?;
+
+        let sym = unlisp_rt::symbols::get_or_intern_symbol("-main".to_string());
+
+        unsafe {
+            if (*sym).function.is_null() {
+                Err(error::Error::new_compilation_error("-main function is not defined"))?;
+            } else if (*(*sym).function).arg_count != 0
+                || (*(*sym).function).has_restarg {
+                Err(error::Error::new_compilation_error("-main function should have zero arity"))?;
+            }
+        }
+
+        let i32_ty = self.llvm_ctx.i32_type();
+
+        let main_fn_ty = i32_ty.fn_type(&[], false);
+        let main_fn = self.module.add_function("main", main_fn_ty, None);
+
+        self.enter_fn_block(&main_fn);
+
+        let init_rt_fn = self.lookup_known_fn("unlisp_rt_init_runtime");
+        let code_init_fn = self.lookup_known_fn(&code_init_fn_name);
+
+        self.builder.build_call(init_rt_fn, &[], "init_rt");
+        self.builder.build_call(code_init_fn, &[], "init_code");
+
+        call::compile_call(self, &Call {
+            fn_name: "-main".to_string(),
+            args: vec![]
+        })?;
+
+        let ret_code: BasicValueEnum = i32_ty.const_int(123, false).into();
+
+        self.builder.build_return(Some(&ret_code));
+
+        self.verify_or_panic(&main_fn, "main");
+
+        Ok(())
+    }
+
     pub unsafe fn compile_hirs(&mut self, hirs: &[HIR]) -> GenResult<CompiledFn> {
-        let top_level_fn_name = compile_top_level_hirs(self, hirs)?;
+        let top_level_fn_name = self.codegen_hirs(hirs)?;
 
         Ok(self
             .execution_engine

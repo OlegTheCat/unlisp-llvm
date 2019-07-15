@@ -1,0 +1,13 @@
+[package]
+name = "compiler_lib"
+version = "0.1.0"
+authors = ["oleh.palianytsia <oleh.palianytsia@protonmail.com>"]
+edition = "2018"
+
+[dependencies]
+libc = "0.2"
+inkwell = { git = "https://github.com/TheDan64/inkwell", branch = "llvm7-0" }
+runtime = { path = "../runtime" }
+
+[lib]
+name = "unlispc"

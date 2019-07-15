@@ -1,0 +1,11 @@
+[package]
+name = "compiler"
+version = "0.1.0"
+authors = ["oleh.palianytsia <oleh.palianytsia@protonmail.com>"]
+edition = "2018"
+
+[dependencies]
+compiler_lib = { path = "../compiler_lib" }
+runtime = { path = "../runtime" }
+inkwell = { git = "https://github.com/TheDan64/inkwell", branch = "llvm7-0" }
+clap = "2.33.0"

@@ -1,5 +1,5 @@
 use crate::error;
-use crate::runtime::*;
+use unlisp_rt::*;
 
 use std::collections::HashSet;
 use std::error::Error;

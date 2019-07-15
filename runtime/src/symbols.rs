@@ -1,4 +1,4 @@
-use super::defs::Symbol;
+use crate::defs::Symbol;
 use libc::c_char;
 use std::collections::HashMap;
 use std::ffi::{CStr, CString};

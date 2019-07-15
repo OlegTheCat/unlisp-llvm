@@ -1,15 +1,10 @@
 use std::ffi::CStr;
 use std::mem;
 use std::ptr;
-
-use super::defs::Object;
-
-use inkwell::context::Context;
-use inkwell::module::{Linkage, Module};
-use inkwell::AddressSpace;
 use libc::c_char;
 
-use crate::error::Error;
+use crate::defs::Object;
+use crate::error::RuntimeError;
 
 const JMP_BUF_SIZE: usize = mem::size_of::<u32>() * 40;
 
@@ -38,7 +33,7 @@ extern "C" {
     fn longjmp(buf: *const i8) -> !;
 }
 
-pub unsafe fn run_with_global_ex_handler<F: FnOnce() -> Object>(f: F) -> Result<Object, Error> {
+pub unsafe fn run_with_global_ex_handler<F: FnOnce() -> Object>(f: F) -> Result<Object, RuntimeError> {
     let mut prev_handler: JmpBuf = mem::zeroed();
 
     ptr::copy_nonoverlapping(
@@ -50,7 +45,7 @@ pub unsafe fn run_with_global_ex_handler<F: FnOnce() -> Object>(f: F) -> Result<
     let result = if setjmp(glob_jmp_buf_ptr()) == 0 {
         Ok(f())
     } else {
-        Err(Error::new_runtime_error(
+        Err(RuntimeError::new(
             (*(ERR_MSG_PTR as *mut String)).clone(),
         ))
     };
@@ -69,11 +64,11 @@ pub unsafe fn raise_error(msg: String) -> ! {
     longjmp(glob_jmp_buf_ptr())
 }
 
-pub fn gen_defs(ctx: &Context, module: &Module) {
-    // sjlj_gen_def(ctx, module);
-    raise_arity_error_gen_def(ctx, module);
-    raise_undef_fn_error_gen_def(ctx, module);
-}
+// pub fn gen_defs(ctx: &Context, module: &Module) {
+//     // sjlj_gen_def(ctx, module);
+//     raise_arity_error_gen_def(ctx, module);
+//     raise_undef_fn_error_gen_def(ctx, module);
+// }
 
 // fn sjlj_gen_def(ctx: &Context, module: &Module) {
 //     let i32_ty = ctx.i32_type();
@@ -119,20 +114,6 @@ static RAISE_ARITY_ERROR: unsafe extern "C" fn(
     actual: u64,
 ) -> ! = raise_arity_error;
 
-fn raise_arity_error_gen_def(ctx: &Context, module: &Module) {
-    let void_ty = ctx.void_type();
-    let fn_ty = void_ty.fn_type(
-        &[
-            ctx.i8_type().ptr_type(AddressSpace::Generic).into(),
-            ctx.i64_type().into(),
-            ctx.i64_type().into(),
-        ],
-        false,
-    );
-
-    module.add_function("raise_arity_error", fn_ty, Some(Linkage::External));
-}
-
 #[no_mangle]
 pub unsafe extern "C" fn raise_undef_fn_error(name: *const c_char) -> ! {
     let name_str = CStr::from_ptr(name).to_str().unwrap();
@@ -144,16 +125,6 @@ pub unsafe extern "C" fn raise_undef_fn_error(name: *const c_char) -> ! {
 
 #[used]
 static RAISE_UNDEF_FN_ERROR: unsafe extern "C" fn(name: *const c_char) -> ! = raise_undef_fn_error;
-
-fn raise_undef_fn_error_gen_def(ctx: &Context, module: &Module) {
-    let void_ty = ctx.void_type();
-    let fn_ty = void_ty.fn_type(
-        &[ctx.i8_type().ptr_type(AddressSpace::Generic).into()],
-        false,
-    );
-
-    module.add_function("raise_undef_fn_error", fn_ty, Some(Linkage::External));
-}
 
 pub unsafe fn raise_cast_error(from: String, to: String) -> ! {
     let msg = format!("cannot cast {} to {}", from, to);
