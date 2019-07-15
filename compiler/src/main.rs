@@ -199,7 +199,7 @@ fn aot_file(stdlib_path: Option<&str>, rt_lib_path: &str, file: &str, out: &str)
             "generic",
             "",
             OptimizationLevel::None,
-            RelocMode::Default,
+            RelocMode::PIC,
             CodeModel::Default,
         )
         .unwrap();
@@ -214,12 +214,20 @@ fn aot_file(stdlib_path: Option<&str>, rt_lib_path: &str, file: &str, out: &str)
 
     println!("Linking with runtime library: {}...", rt_lib_path);
 
-    let linker_output = Command::new("cc")
-        .arg(rt_lib_path)
-        .arg(object_file)
-        .arg("-o")
-        .arg(out)
-        .output()
+    let mut cmd_args = vec![];
+
+    #[cfg(target_os = "linux")]
+    {
+        cmd_args.push("-lpthread");
+        cmd_args.push("-ldl");
+    }
+
+    cmd_args.push(object_file.as_str());
+    cmd_args.push(rt_lib_path);
+    cmd_args.push("-o");
+    cmd_args.push(out);
+
+    let linker_output = Command::new("clang").args(cmd_args.as_slice()).output()
         .expect("failed to execute linker");
 
     if !linker_output.status.success() {
@@ -239,49 +247,48 @@ fn main() {
         .arg(Arg::with_name("stdlib-path")
              .long("stdlib-path")
              .value_name("FILE")
-             .help("Sets path for stdlib file (default: ./stdlib.unl).")
+             .help("Sets path for stdlib file (default: ./stdlib.unl)")
              .conflicts_with("no-stdlib")
              .takes_value(true))
         .arg(Arg::with_name("no-stdlib")
-             .short("n")
              .long("no-stdlib")
              .conflicts_with("stdlib-path")
-             .help("Don't precompile stdlib file."))
+             .help("Don't precompile stdlib file"))
         .subcommand(SubCommand::with_name("repl")
-                    .about("Launch Unlisp REPL.")
+                    .about("Launch Unlisp REPL")
                     .arg(Arg::with_name("dump-compiled")
                          .long("dump-compiled")
                          .short("d")
-                         .help("Dump compiled IR to stderr.")))
+                         .help("Dump compiled IR to stderr")))
         .subcommand(SubCommand::with_name("eval")
-                    .about("Eval a file.")
+                    .about("Eval a file")
                     .arg(Arg::with_name("file")
                          .short("f")
                          .long("file")
                          .value_name("FILE")
                          .takes_value(true)
                          .required(true)
-                         .help("A file to eval.")))
+                         .help("A file to eval")))
         .subcommand(SubCommand::with_name("compile")
-                    .about("AOT compile a file.")
+                    .about("AOT compile a file")
                     .arg(Arg::with_name("file")
                          .short("f")
                          .long("file")
                          .value_name("FILE")
                          .takes_value(true)
                          .required(true)
-                         .help("A file to compile."))
+                         .help("A file to compile"))
                     .arg(Arg::with_name("output")
                          .short("o")
                          .long("output")
                          .value_name("FILE")
                          .takes_value(true)
-                         .help("An output binary file."))
+                         .help("An output binary file"))
                     .arg(Arg::with_name("runtime-lib")
                          .long("runtime-lib-path")
                          .value_name("FILE")
                          .takes_value(true)
-                         .help("Path to Unlisp runtime library to link (default: ./target/<debug/release>/libunlisp_rt.a).")));
+                         .help("Path to Unlisp runtime library to link (default: ./target/<debug/release>/libunlisp_rt.a)")));
     let matches = app.get_matches();
 
     let stdlib_path;
