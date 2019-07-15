@@ -118,18 +118,18 @@ nil
 ### Varargs
 
 ```
->>> (set-fn (quote list) (lambda (& args) args))
+>>> (defun my-list (& args) args)
 nil
->>> (list 1 2 3)
+>>> (my-list 1 2 3)
 (1 2 3)
 ```
 
 ### Apply
 
 ```
->>> (apply (symbol-function (quote +)) (quote (1 2)))
+>>> (apply (symf +) (quote (1 2)))
 3
->>> (apply (symbol-function (quote +)) 1 2 (quote (3 4)))
+>>> (apply (symf +) 1 2 (quote (3 4)))
 10
 ```
 
@@ -137,11 +137,9 @@ nil
 ### Functions & closures
 
 ```
->>> (set-fn (quote foo) (lambda (x) (lambda (y) (+ x y))))
+>>> (defun foo (x) (lambda (y) (+ x y)))
 nil
->>> (set-fn (quote bar) (foo 1))
-nil
->>> (bar 2)
+>>> (funcall (foo 1) 2)
 3
 ```
 
@@ -194,7 +192,7 @@ foonil
 >>> x
 compilation error: undefined symbol x
 
->>> (set-fn (quote x) (lambda (y)))
+>>> (defun x (y))
 nil
 
 >>> (x 1 2)

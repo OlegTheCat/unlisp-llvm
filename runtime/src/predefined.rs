@@ -328,7 +328,7 @@ unsafe extern "C" fn native_error_apply(f: *const Function, args: List) -> ! {
 
 unsafe extern "C" fn native_print_invoke(_: *const Function, x: Object) -> Object {
     print!("{}", x);
-    Object::nil()
+    x
 }
 
 unsafe extern "C" fn native_print_apply(f: *const Function, args: List) -> Object {
@@ -337,7 +337,7 @@ unsafe extern "C" fn native_print_apply(f: *const Function, args: List) -> Objec
 
 unsafe extern "C" fn native_println_invoke(_: *const Function, x: Object) -> Object {
     println!("{}", x);
-    Object::nil()
+    x
 }
 
 unsafe extern "C" fn native_println_apply(f: *const Function, args: List) -> Object {
