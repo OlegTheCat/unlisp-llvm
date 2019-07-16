@@ -2,7 +2,7 @@
 
 LLVM-based compiler for a toy Lisp language. It has interactive REPL, supports AOT compilation and expr-by-expr file execution.
 
-For more info on how to run the compiler, refer to `cargo run -p compiler -- --help`.
+For more info on how to run the compiler, refer to `cargo run -p unlisp -- --help`.
 
 ## Building
 
@@ -159,7 +159,7 @@ $ cat file.unl
 (defun -main ()
   (println (fibo 10)))
 
-$ cargo run -p compiler -- compile -f file.unl -o binary
+$ cargo run -p unlisp -- compile -f file.unl -o binary
     Finished dev [unoptimized + debuginfo] target(s) in 0.03s
      Running `target/debug/compiler compile -f file.unl -o binary`
 Compiling file: file.unl...

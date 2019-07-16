@@ -1,2 +1,2 @@
 [workspace]
-members = ["runtime", "compiler_lib", "compiler"]
+members = ["unlisp_rt", "unlispc", "unlisp"]

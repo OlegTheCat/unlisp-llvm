@@ -199,7 +199,7 @@ fn aot_file(stdlib_path: Option<&str>, rt_lib_path: &str, file: &str, out: &str)
             "generic",
             "",
             OptimizationLevel::None,
-            RelocMode::PIC,
+            RelocMode::Default,
             CodeModel::Default,
         )
         .unwrap();
