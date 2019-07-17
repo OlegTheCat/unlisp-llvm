@@ -1,7 +1,7 @@
 use crate::defs::*;
+use crate::error::RuntimeError;
 use crate::exceptions;
 use crate::symbols;
-use crate::error::RuntimeError;
 
 use libc::{c_char, c_void};
 use std::ffi::{CStr, CString};
@@ -178,7 +178,7 @@ unsafe extern "C" fn native_first_apply(f: *const Function, args: List) -> Objec
 
 unsafe fn apply_to_list(f: *const Function, args: List) -> Object {
     if !unlisp_rt_check_arity(f, args.len) {
-        exceptions::raise_arity_error((*f).name, (*f).arg_count, args.len);
+        exceptions::unlisp_rt_raise_arity_error((*f).name, (*f).arg_count, args.len);
     }
 
     let apply_fn: unsafe extern "C" fn(*const Function, List) -> Object =
@@ -275,7 +275,7 @@ pub unsafe fn call_macro(f: *mut Function, args: List) -> Result<Object, Runtime
 
     exceptions::run_with_global_ex_handler(|| {
         if !unlisp_rt_check_arity(f, args.len) {
-            exceptions::raise_arity_error((*f).name, (*f).arg_count, args.len);
+            exceptions::unlisp_rt_raise_arity_error((*f).name, (*f).arg_count, args.len);
         }
         apply_fn(f, args)
     })

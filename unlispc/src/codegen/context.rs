@@ -1,12 +1,10 @@
-use crate::repr::{HIR, Call};
-use crate::runtime_defs;
 use crate::error;
+use crate::repr::HIR;
+use crate::runtime_defs;
 
 use super::common::*;
 use super::top_level::compile_top_level_hirs;
-use super::call;
 
-use unlisp_rt;
 use inkwell::basic_block::BasicBlock;
 use inkwell::builder::Builder;
 use inkwell::context::Context;
@@ -17,6 +15,7 @@ use inkwell::types::BasicTypeEnum;
 use inkwell::values::{BasicValueEnum, FunctionValue, GlobalValue};
 use inkwell::AddressSpace;
 use inkwell::OptimizationLevel;
+use unlisp_rt;
 
 use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
@@ -251,10 +250,13 @@ impl<'a> CodegenContext<'a> {
 
         unsafe {
             if (*sym).function.is_null() {
-                Err(error::Error::new_compilation_error("-main function is not defined"))?;
-            } else if (*(*sym).function).arg_count != 0
-                || (*(*sym).function).has_restarg {
-                Err(error::Error::new_compilation_error("-main function should have zero arity"))?;
+                Err(error::Error::new_compilation_error(
+                    "-main function is not defined",
+                ))?;
+            } else if (*(*sym).function).arg_count != 0 || (*(*sym).function).has_restarg {
+                Err(error::Error::new_compilation_error(
+                    "-main function should have zero arity",
+                ))?;
             }
         }
 
@@ -271,12 +273,34 @@ impl<'a> CodegenContext<'a> {
         self.builder.build_call(init_rt_fn, &[], "init_rt");
         self.builder.build_call(code_init_fn, &[], "init_code");
 
-        call::compile_call(self, &Call {
-            fn_name: "-main".to_string(),
-            args: vec![]
-        })?;
+        let sym_name_ptr = self.str_literal_as_i8_ptr("-main");
+        let intern_fn = self.lookup_known_fn("unlisp_rt_intern_sym");
+        let interned_sym_ptr = self
+            .builder
+            .build_call(intern_fn, &[sym_name_ptr.into()], "main_symbol")
+            .try_as_basic_value()
+            .left()
+            .unwrap()
+            .into_pointer_value();
 
-        let ret_code: BasicValueEnum = i32_ty.const_int(123, false).into();
+        let fn_obj_ptr_ptr = unsafe {
+            self.builder
+                .build_struct_gep(interned_sym_ptr, 1, "main_fn_obj_ptr_ptr")
+        };
+
+        let fn_obj_ptr = self
+            .builder
+            .build_load(fn_obj_ptr_ptr, "main_fn_obj_ptr")
+            .into_pointer_value();
+
+        let run_with_ex_handler_fn = self.lookup_known_fn("unlisp_rt_run_with_global_ex_handler");
+
+        let ret_code = self
+            .builder
+            .build_call(run_with_ex_handler_fn, &[fn_obj_ptr.into()], "ret_code")
+            .try_as_basic_value()
+            .left()
+            .unwrap();
 
         self.builder.build_return(Some(&ret_code));
 

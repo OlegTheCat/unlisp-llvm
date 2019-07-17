@@ -198,7 +198,7 @@ fn codegen_fn_exists_block(
     let wrong_arity_block = ctx.enter_block();
 
     ctx.builder.build_call(
-        ctx.lookup_known_fn("raise_arity_error"),
+        ctx.lookup_known_fn("unlisp_rt_raise_arity_error"),
         &[
             sym_name_ptr,
             arity.into(),
@@ -258,7 +258,7 @@ pub fn compile_call(ctx: &mut CodegenContext, call: &Call) -> CompileResult {
 
     let no_fn_block = ctx.enter_block();
     ctx.builder.build_call(
-        ctx.lookup_known_fn("raise_undef_fn_error"),
+        ctx.lookup_known_fn("unlisp_rt_raise_undef_fn_error"),
         &[sym_name_ptr],
         "raise_undef_fn",
     );

@@ -1,9 +1,9 @@
+use libc::c_char;
 use std::ffi::CStr;
 use std::mem;
 use std::ptr;
-use libc::c_char;
 
-use crate::defs::Object;
+use crate::defs::{Object, Function};
 use crate::error::RuntimeError;
 
 const JMP_BUF_SIZE: usize = mem::size_of::<u32>() * 40;
@@ -33,7 +33,9 @@ extern "C" {
     fn longjmp(buf: *const i8) -> !;
 }
 
-pub unsafe fn run_with_global_ex_handler<F: FnOnce() -> Object>(f: F) -> Result<Object, RuntimeError> {
+pub unsafe fn run_with_global_ex_handler<F: FnOnce() -> Object>(
+    f: F,
+) -> Result<Object, RuntimeError> {
     let mut prev_handler: JmpBuf = mem::zeroed();
 
     ptr::copy_nonoverlapping(
@@ -45,9 +47,7 @@ pub unsafe fn run_with_global_ex_handler<F: FnOnce() -> Object>(f: F) -> Result<
     let result = if setjmp(glob_jmp_buf_ptr()) == 0 {
         Ok(f())
     } else {
-        Err(RuntimeError::new(
-            (*(ERR_MSG_PTR as *mut String)).clone(),
-        ))
+        Err(RuntimeError::new((*(ERR_MSG_PTR as *mut String)).clone()))
     };
 
     ptr::copy_nonoverlapping(
@@ -58,6 +58,27 @@ pub unsafe fn run_with_global_ex_handler<F: FnOnce() -> Object>(f: F) -> Result<
 
     result
 }
+
+#[inline(never)]
+#[no_mangle]
+pub unsafe extern "C" fn unlisp_rt_run_with_global_ex_handler(
+    f: *mut Function,
+) -> i32 {
+    let invoke_fn: unsafe extern "C" fn(*const Function) -> Object =
+        mem::transmute((*f).invoke_f_ptr);
+
+    match run_with_global_ex_handler(|| invoke_fn(f)) {
+        Ok(_) => 0,
+        Err(e) => {
+            eprintln!("runtime error: {}", e);
+            1
+        }
+    }
+}
+
+#[used]
+static RUN_WITH_GLOB_EX_HANDLER: unsafe extern "C" fn(*mut Function) -> i32 =
+    unlisp_rt_run_with_global_ex_handler;
 
 pub unsafe fn raise_error(msg: String) -> ! {
     ERR_MSG_PTR = Box::into_raw(Box::new(msg)) as *mut i8;
@@ -91,8 +112,13 @@ pub unsafe fn raise_error(msg: String) -> ! {
 //     module.add_function("longjmp", lj_fn_ty, Some(Linkage::External));
 // }
 
+#[inline(never)]
 #[no_mangle]
-pub unsafe extern "C" fn raise_arity_error(name: *const c_char, _expected: u64, actual: u64) -> ! {
+pub unsafe extern "C" fn unlisp_rt_raise_arity_error(
+    name: *const c_char,
+    _expected: u64,
+    actual: u64,
+) -> ! {
     let name_str = if name != ptr::null() {
         CStr::from_ptr(name).to_str().unwrap()
     } else {
@@ -112,10 +138,11 @@ static RAISE_ARITY_ERROR: unsafe extern "C" fn(
     name: *const c_char,
     expected: u64,
     actual: u64,
-) -> ! = raise_arity_error;
+) -> ! = unlisp_rt_raise_arity_error;
 
+#[inline(never)]
 #[no_mangle]
-pub unsafe extern "C" fn raise_undef_fn_error(name: *const c_char) -> ! {
+pub unsafe extern "C" fn unlisp_rt_raise_undef_fn_error(name: *const c_char) -> ! {
     let name_str = CStr::from_ptr(name).to_str().unwrap();
 
     let msg = format!("undefined function {}", name_str);
@@ -124,7 +151,8 @@ pub unsafe extern "C" fn raise_undef_fn_error(name: *const c_char) -> ! {
 }
 
 #[used]
-static RAISE_UNDEF_FN_ERROR: unsafe extern "C" fn(name: *const c_char) -> ! = raise_undef_fn_error;
+static RAISE_UNDEF_FN_ERROR: unsafe extern "C" fn(name: *const c_char) -> ! =
+    unlisp_rt_raise_undef_fn_error;
 
 pub unsafe fn raise_cast_error(from: String, to: String) -> ! {
     let msg = format!("cannot cast {} to {}", from, to);
