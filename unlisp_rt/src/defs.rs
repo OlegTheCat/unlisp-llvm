@@ -6,7 +6,7 @@ use std::ffi::VaList;
 use std::fmt;
 use std::ptr;
 
-use crate::{exceptions, symbols, predefined};
+use crate::{exceptions, predefined, symbols};
 
 // TODO: revise usage of Copy here
 #[derive(Clone, Copy)]

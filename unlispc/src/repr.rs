@@ -545,7 +545,9 @@ pub fn form_to_runtime_object(form: &Form) -> Result<defs::Object, error::Error>
 
             defs::Object::from_list(Box::into_raw(Box::new(rt_list)))
         }
-        Form::T => Err(error::Error::new_unsupported_error("t literal is not supported yet"))?,
+        Form::T => Err(error::Error::new_unsupported_error(
+            "t literal is not supported yet",
+        ))?,
     };
 
     Ok(obj)
@@ -565,9 +567,9 @@ pub unsafe fn runtime_object_to_form(t_obj: defs::Object) -> Result<Form, error:
 
             Form::List(converted)
         }
-        defs::ObjType::Function => {
-            Err(error::Error::new_unsupported_error("embedding functions in code is not supported yet"))?
-        }
+        defs::ObjType::Function => Err(error::Error::new_unsupported_error(
+            "embedding functions in code is not supported yet",
+        ))?,
         defs::ObjType::Symbol => Form::Symbol(
             CStr::from_ptr((*t_obj.unpack_symbol()).name)
                 .to_str()

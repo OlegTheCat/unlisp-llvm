@@ -9,8 +9,8 @@ use std::error::Error;
 use std::fs;
 use std::io;
 use std::io::{Read, Write};
-use std::process::Command;
 use std::path::Path;
+use std::process::Command;
 
 use unlispc::codegen::context::CodegenContext;
 use unlispc::error;
@@ -32,7 +32,11 @@ fn read_and_parse<'a, T: Read>(
         .transpose()?)
 }
 
-pub fn eval_and_expand_file(ctx: &mut CodegenContext, path: &str, panic_on_err: bool) -> Result<Vec<repr::HIR>, Box<dyn Error>> {
+pub fn eval_and_expand_file(
+    ctx: &mut CodegenContext,
+    path: &str,
+    panic_on_err: bool,
+) -> Result<Vec<repr::HIR>, Box<dyn Error>> {
     let mut file = fs::File::open(path).expect("stdlib file not found");
 
     let report_err = |msg| {
@@ -168,7 +172,10 @@ fn aot_file(stdlib_path: Option<&str>, rt_lib_path: &str, file: &str, out: &str)
     println!("Compiling file: {}...", file);
 
     if let Some(stdlib) = stdlib_path {
-        expanded.append(&mut eval_and_expand_file(&mut expand_ctx, stdlib, true).expect("stdlib evaluation shouldn't cannot return Error"));
+        expanded.append(
+            &mut eval_and_expand_file(&mut expand_ctx, stdlib, true)
+                .expect("stdlib evaluation shouldn't cannot return Error"),
+        );
     }
 
     let expanded_file = eval_and_expand_file(&mut expand_ctx, file, false);
@@ -185,13 +192,14 @@ fn aot_file(stdlib_path: Option<&str>, rt_lib_path: &str, file: &str, out: &str)
             return false;
         }
 
-        _ => ()
+        _ => (),
     }
 
     let object_file = format!("{}.o", out);
 
     let triple = TargetMachine::get_default_triple().to_string();
-    let target = Target::from_triple(triple.as_str()).expect("couldn't create target from target triple");
+    let target =
+        Target::from_triple(triple.as_str()).expect("couldn't create target from target triple");
 
     let target_machine = target
         .create_target_machine(
@@ -227,11 +235,16 @@ fn aot_file(stdlib_path: Option<&str>, rt_lib_path: &str, file: &str, out: &str)
     cmd_args.push("-o");
     cmd_args.push(out);
 
-    let linker_output = Command::new("clang").args(cmd_args.as_slice()).output()
+    let linker_output = Command::new("clang")
+        .args(cmd_args.as_slice())
+        .output()
         .expect("failed to execute linker");
 
     if !linker_output.status.success() {
-        eprintln!("failed to create binary: \n {}", String::from_utf8_lossy(&linker_output.stderr));
+        eprintln!(
+            "failed to create binary: \n {}",
+            String::from_utf8_lossy(&linker_output.stderr)
+        );
         return false;
     }
 
@@ -301,10 +314,23 @@ fn main() {
 
     match matches.subcommand_name() {
         Some("repl") => {
-            launch_repl(stdlib_path, matches.subcommand_matches("repl").unwrap().is_present("dump-compiled"));
+            launch_repl(
+                stdlib_path,
+                matches
+                    .subcommand_matches("repl")
+                    .unwrap()
+                    .is_present("dump-compiled"),
+            );
         }
         Some("eval") => {
-            if !exec_file(stdlib_path, matches.subcommand_matches("eval").unwrap().value_of("file").unwrap()) {
+            if !exec_file(
+                stdlib_path,
+                matches
+                    .subcommand_matches("eval")
+                    .unwrap()
+                    .value_of("file")
+                    .unwrap(),
+            ) {
                 std::process::exit(1);
             }
         }

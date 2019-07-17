@@ -5,7 +5,7 @@ use std::fmt;
 pub enum ErrorType {
     Syntax,
     Compilation,
-    Unsupported
+    Unsupported,
 }
 
 #[derive(Debug, Clone)]

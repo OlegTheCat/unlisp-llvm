@@ -3,7 +3,7 @@ use std::ffi::CStr;
 use std::mem;
 use std::ptr;
 
-use crate::defs::{Object, Function};
+use crate::defs::{Function, Object};
 use crate::error::RuntimeError;
 
 const JMP_BUF_SIZE: usize = mem::size_of::<u32>() * 40;
@@ -61,9 +61,7 @@ pub unsafe fn run_with_global_ex_handler<F: FnOnce() -> Object>(
 
 #[inline(never)]
 #[no_mangle]
-pub unsafe extern "C" fn unlisp_rt_run_with_global_ex_handler(
-    f: *mut Function,
-) -> i32 {
+pub unsafe extern "C" fn unlisp_rt_run_with_global_ex_handler(f: *mut Function) -> i32 {
     let invoke_fn: unsafe extern "C" fn(*const Function) -> Object =
         mem::transmute((*f).invoke_f_ptr);
 
