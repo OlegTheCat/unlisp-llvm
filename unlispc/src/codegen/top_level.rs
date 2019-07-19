@@ -20,6 +20,10 @@ pub fn compile_hir(ctx: &mut CodegenContext, hir: &HIR) -> CompileResult {
         HIR::If(if_hir) => compile_if(ctx, if_hir),
         HIR::Quote(quote) => compile_quoted_literal(ctx, &quote.body),
         HIR::LetBlock(let_block) => compile_let_block(ctx, let_block),
+        HIR::DeclareSym(decl_s) => {
+            ctx.declare_global_sym(&decl_s.var_name);
+            Ok(compile_nil_literal(ctx))
+        }
     }
 }
 

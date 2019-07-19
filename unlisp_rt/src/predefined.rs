@@ -223,7 +223,7 @@ unsafe extern "C" fn native_apply_apply(_: *const Function, args: List) -> Objec
 
 unsafe extern "C" fn native_symbol_fn_invoke(_: *const Function, sym: Object) -> Object {
     let sym = sym.unpack_symbol();
-    let f = (*sym).function;
+    let f = unlisp_rt_symbol_function(sym);
     Object::from_function(f)
 }
 
@@ -355,6 +355,26 @@ unsafe extern "C" fn native_stdout_write_invoke(_: *const Function, s: Object) -
 unsafe extern "C" fn native_stdout_write_apply(f: *const Function, args: List) -> Object {
     native_stdout_write_invoke(f, args.first())
 }
+
+unsafe extern "C" fn native_set_val_invoke(_: *const Function, sym: Object, val: Object) -> Object {
+    let sym = sym.unpack_symbol();
+    (*sym).value = Box::into_raw(Box::new(val));
+
+    Object::nil()
+}
+
+unsafe extern "C" fn native_set_val_apply(f: *const Function, args: List) -> Object {
+    native_set_val_invoke(f, args.first(), args.rest().first())
+}
+
+unsafe extern "C" fn native_symbol_value_invoke(_: *const Function, sym: Object) -> Object {
+    unlisp_rt_symbol_value(sym.unpack_symbol())
+}
+
+unsafe extern "C" fn native_symbol_value_apply(f: *const Function, args: List) -> Object {
+    native_symbol_value_invoke(f, args.first())
+}
+
 
 pub fn init() {
     init_symbol_fn(
@@ -488,6 +508,22 @@ pub fn init() {
         native_stdout_write_apply as *const c_void,
         "stdout-write",
         &["s"],
+        false,
+    );
+
+    init_symbol_fn(
+        native_set_val_invoke as *const c_void,
+        native_set_val_apply as *const c_void,
+        "set-val",
+        &["sym", "val"],
+        false,
+    );
+
+    init_symbol_fn(
+        native_symbol_value_invoke as *const c_void,
+        native_symbol_value_apply as *const c_void,
+        "symbol-value",
+        &["sym"],
         false,
     );
 }

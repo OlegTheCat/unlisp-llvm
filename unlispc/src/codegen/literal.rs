@@ -43,7 +43,7 @@ pub fn compile_literal(ctx: &mut CodegenContext, literal: &Literal) -> CompileRe
         Literal::IntegerLiteral(i) => Ok(compile_integer(ctx, *i)),
         Literal::StringLiteral(s) => Ok(compile_string_literal(ctx, s)),
         Literal::SymbolLiteral(s) => {
-            let val = ctx.lookup_name(s).ok_or_else(|| {
+            let val = ctx.lookup_name_or_gen_global_access(s).ok_or_else(|| {
                 error::Error::new_compilation_error(format!("undefined symbol: {}", s.as_str()))
             })?;
             Ok(val)

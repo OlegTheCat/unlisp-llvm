@@ -304,3 +304,10 @@
   (qquote (dbgp nil (unqs forms))))
 
 (defmacro comment (& body))
+
+(defmacro defvar (sym val)
+  (qquote
+   (let ()
+     (declare-sym (unq sym))
+     (set-val (quote (unq sym))
+              (unq val)))))

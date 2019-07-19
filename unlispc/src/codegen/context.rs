@@ -12,7 +12,7 @@ use inkwell::execution_engine::{ExecutionEngine, JitFunction};
 use inkwell::module::Module;
 use inkwell::passes::PassManager;
 use inkwell::types::BasicTypeEnum;
-use inkwell::values::{BasicValueEnum, FunctionValue, GlobalValue};
+use inkwell::values::{BasicValueEnum, FunctionValue, GlobalValue, PointerValue};
 use inkwell::AddressSpace;
 use inkwell::OptimizationLevel;
 use unlisp_rt;
@@ -32,6 +32,7 @@ pub struct CodegenContext<'a> {
     module: Module,
     blocks_stack: Vec<Rc<BasicBlock>>,
     envs: Vec<HashMap<String, BasicValueEnum>>,
+    declared_syms: HashSet<String>,
     defined_str_literals: HashSet<String>,
     str_literal_globals: HashMap<String, GlobalValue>,
 }
@@ -83,6 +84,7 @@ impl<'a> CodegenContext<'a> {
             envs: vec![],
             defined_str_literals: HashSet::new(),
             str_literal_globals: HashMap::new(),
+            declared_syms: HashSet::new(),
         }
     }
 
@@ -103,6 +105,14 @@ impl<'a> CodegenContext<'a> {
         self.blocks_stack = vec![];
         self.module = module;
         self.str_literal_globals = HashMap::new();
+    }
+
+    pub fn declare_global_sym(&mut self, name: &String) {
+        self.declared_syms.insert(name.clone());
+    }
+
+    pub fn is_global_sym(&self, name: &String) -> bool {
+        self.declared_syms.get(name).is_some()
     }
 
     fn declare_str_literal(&mut self, lit: String) -> GlobalValue {
@@ -154,6 +164,19 @@ impl<'a> CodegenContext<'a> {
         )
     }
 
+    pub fn get_interned_sym(&mut self, name: impl Into<String>) -> PointerValue {
+        let sym_name_ptr = self.str_literal_as_i8_ptr(name);
+
+        let intern_fn = self.lookup_known_fn("unlisp_rt_intern_sym");
+        self
+            .builder
+            .build_call(intern_fn, &[sym_name_ptr.into()], "symbol")
+            .try_as_basic_value()
+            .left()
+            .unwrap()
+            .into_pointer_value()
+    }
+
     pub fn lookup_known_type(&self, name: &str) -> BasicTypeEnum {
         self.module
             .get_type(name)
@@ -179,7 +202,7 @@ impl<'a> CodegenContext<'a> {
         self.envs[len - 1].insert(name, val);
     }
 
-    pub fn lookup_name(&self, name: &String) -> Option<BasicValueEnum> {
+    pub fn lookup_local_name(&self, name: &String) -> Option<BasicValueEnum> {
         for env in self.envs.iter().rev() {
             if let Some(val) = env.get(name) {
                 return Some(val.clone());
@@ -187,6 +210,23 @@ impl<'a> CodegenContext<'a> {
         }
 
         None
+    }
+
+    pub fn lookup_name_or_gen_global_access(&mut self, name: &String) -> Option<BasicValueEnum> {
+        self.lookup_local_name(name).or_else(|| {
+            if self.declared_syms.get(name).is_none() {
+                return None;
+            }
+
+            let sym_val_fn = self.lookup_known_fn("unlisp_rt_symbol_value");
+            let sym = self.get_interned_sym(name);
+
+            Some(self.builder
+             .build_call(sym_val_fn, &[sym.into()], "sym_val")
+             .try_as_basic_value()
+             .left()
+             .unwrap())
+        })
     }
 
     pub fn pop_env(&mut self) {

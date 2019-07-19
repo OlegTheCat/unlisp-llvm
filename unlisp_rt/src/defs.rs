@@ -275,6 +275,7 @@ impl List {
 pub struct Symbol {
     pub name: *const c_char,
     pub function: *mut Function,
+    pub value: *mut Object,
 }
 
 impl Symbol {
@@ -282,6 +283,7 @@ impl Symbol {
         Self {
             name: name,
             function: ptr::null_mut(),
+            value: ptr::null_mut(),
         }
     }
 }
@@ -478,6 +480,7 @@ pub extern "C" fn unlisp_rt_empty_list() -> List {
 #[used]
 static EMPTY_LIST: extern "C" fn() -> List = unlisp_rt_empty_list;
 
+#[inline(never)]
 #[no_mangle]
 pub extern "C" fn unlisp_rt_init_runtime() {
     symbols::init();
@@ -486,3 +489,35 @@ pub extern "C" fn unlisp_rt_init_runtime() {
 
 #[used]
 static INIT_RT: extern "C" fn() = unlisp_rt_init_runtime;
+
+#[inline(never)]
+#[no_mangle]
+pub unsafe extern "C" fn unlisp_rt_symbol_value(sym: *mut Symbol) -> Object {
+    let val = (*sym).value;
+
+    if val.is_null() {
+        let rsym_name = CStr::from_ptr((*sym).name).to_str().unwrap().to_string();
+        exceptions::raise_error(format!("unbound symbol: {}", rsym_name))
+    }
+
+    (*val).clone()
+}
+
+#[used]
+static SYM_VAL: unsafe extern "C" fn(*mut Symbol) -> Object = unlisp_rt_symbol_value;
+
+#[inline(never)]
+#[no_mangle]
+pub unsafe extern "C" fn unlisp_rt_symbol_function(sym: *mut Symbol) -> *mut Function {
+    let f = (*sym).function;
+
+    if f.is_null() {
+        let rsym_name = CStr::from_ptr((*sym).name).to_str().unwrap().to_string();
+        exceptions::raise_error(format!("undefined function: {}", rsym_name))
+    }
+
+    f
+}
+
+#[used]
+static SYM_FN: unsafe extern "C" fn(*mut Symbol) -> *mut Function = unlisp_rt_symbol_function;

@@ -72,6 +72,11 @@ pub struct Call {
 }
 
 #[derive(Debug, PartialEq, Eq, Clone)]
+pub struct DeclareSym {
+    pub var_name: String,
+}
+
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub enum Literal {
     T,
     SymbolLiteral(String),
@@ -82,6 +87,7 @@ pub enum Literal {
 
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub enum HIR {
+    DeclareSym(DeclareSym),
     Literal(Literal),
     Lambda(Lambda),
     Closure(Closure),
@@ -306,6 +312,26 @@ fn forms_to_hir(forms: &Vec<Form>) -> Result<HIR, Box<dyn Error>> {
 
                 Ok(HIR::Lambda(lambda))
             }
+            Form::Symbol(s) if is(s, "declare-sym") => {
+                let sym = forms
+                    .get(1)
+                    .ok_or_else(|| error::Error::new_syntax_error("no symbol in declare-sym"))?;
+                let sym = to_symbol(sym)
+                    .ok_or_else(|| error::Error::new_syntax_error("not a symbol in declare-sym"))?;
+
+                if forms.get(2).is_some() {
+                    Err(error::Error::new_syntax_error(format!(
+                        "wrong number of arguments ({}) passed to declare-sym",
+                        forms.len() - 1
+                    )))?
+                }
+
+                let decl_s = DeclareSym {
+                    var_name: sym.clone(),
+                };
+
+                Ok(HIR::DeclareSym(decl_s))
+            }
             Form::Symbol(s) => unsafe {
                 let call_sym = symbols::get_or_intern_symbol(s.clone());
                 let sym_fn = (*call_sym).function;
@@ -454,6 +480,7 @@ fn convert_lambda_body_item(
 
             HIR::If(converted)
         }
+        HIR::DeclareSym(decl_s) => HIR::DeclareSym(decl_s.clone())
     }
 }
 
@@ -522,6 +549,8 @@ pub fn convert_into_closures(hir: &HIR) -> HIR {
 
             HIR::If(converted)
         }
+
+        HIR::DeclareSym(decl_s) => HIR::DeclareSym(decl_s.clone())
     }
 }
 

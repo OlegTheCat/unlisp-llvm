@@ -12,6 +12,10 @@ use super::top_level::compile_hirs;
 
 use std::iter;
 
+fn is_global_name(ctx: &CodegenContext, name: &String) -> bool {
+    ctx.lookup_local_name(name).is_none() && ctx.is_global_sym(name)
+}
+
 fn codegen_raw_fn(ctx: &mut CodegenContext, closure: &Closure) -> GenResult<FunctionValue> {
     let fn_name = closure
         .lambda
@@ -36,15 +40,17 @@ fn codegen_raw_fn(ctx: &mut CodegenContext, closure: &Closure) -> GenResult<Func
     ctx.push_env();
     ctx.enter_fn_block(&function);
 
-    let args_iter = closure
+    let args: Vec<_> = closure
         .free_vars
         .iter()
+        .filter(|n| !is_global_name(ctx, n))
         .chain(closure.lambda.arglist.iter())
-        .chain(closure.lambda.restarg.iter());
+        .chain(closure.lambda.restarg.iter())
+        .collect();
 
     let param_iter = function.get_param_iter();
 
-    for (arg, arg_name) in param_iter.zip(args_iter) {
+    for (arg, arg_name) in param_iter.zip(args.into_iter()) {
         arg.as_struct_value().set_name(arg_name);
         ctx.save_env_mapping(arg_name.clone(), arg);
     }
@@ -394,8 +400,8 @@ pub fn compile_closure(ctx: &mut CodegenContext, closure: &Closure) -> CompileRe
             .const_int(closure.lambda.restarg.is_some() as u64, false),
     );
 
-    for (i, var) in closure.free_vars.iter().enumerate() {
-        let var_val = ctx.lookup_name(var).ok_or_else(|| {
+    for (i, var) in closure.free_vars.iter().filter(|n| !is_global_name(ctx, n)).enumerate() {
+        let var_val = ctx.lookup_local_name(var).ok_or_else(|| {
             Error::new_compilation_error(format!("undefined symbol: {}", var.as_str()))
         })?;
 

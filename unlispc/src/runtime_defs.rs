@@ -25,12 +25,21 @@ fn symbol_gen_def(context: &Context, module: &Module) {
         .unwrap()
         .into_struct_type();
 
+    let obj_struct_ty = module
+        .get_type("unlisp_rt_object")
+        .unwrap()
+        .into_struct_type();
+
     let name_ptr_ty = context.i8_type().ptr_type(AddressSpace::Generic);
     let func_ptr_ty = func_struct_ty.ptr_type(AddressSpace::Generic);
+    let value_ptr_ty = obj_struct_ty.ptr_type(AddressSpace::Generic);
 
     let struct_ty = context.opaque_struct_type("unlisp_rt_symbol");
 
-    struct_ty.set_body(&[name_ptr_ty.into(), func_ptr_ty.into()], false);
+    struct_ty.set_body(&[name_ptr_ty.into(),
+                         func_ptr_ty.into(),
+                         value_ptr_ty.into()],
+                       false);
 }
 
 fn function_gen_def(context: &Context) {
@@ -259,6 +268,40 @@ fn unlisp_rt_run_with_global_ex_handler_gen_def(ctx: &Context, module: &Module) 
     module.add_function("unlisp_rt_run_with_global_ex_handler", fn_ty, None);
 }
 
+fn unlisp_rt_symbol_value_gen_def(_ctx: &Context, module: &Module) {
+    let obj_ty = module
+        .get_type("unlisp_rt_object")
+        .unwrap();
+
+    let sym_ptr_ty = module
+        .get_type("unlisp_rt_symbol")
+        .unwrap()
+        .as_struct_type()
+        .ptr_type(AddressSpace::Generic);
+
+    let fn_ty = obj_ty.fn_type(&[sym_ptr_ty.into()], false);
+    module.add_function("unlisp_rt_symbol_value", fn_ty, None);
+}
+
+fn unlisp_rt_symbol_function_gen_def(_ctx: &Context, module: &Module) {
+    let fn_ptr_ty = module
+        .get_type("unlisp_rt_function")
+        .unwrap()
+        .as_struct_type()
+        .ptr_type(AddressSpace::Generic);
+
+    let sym_ptr_ty = module
+        .get_type("unlisp_rt_symbol")
+        .unwrap()
+        .as_struct_type()
+        .ptr_type(AddressSpace::Generic);
+
+    let fn_ty = fn_ptr_ty.fn_type(&[sym_ptr_ty.into()], false);
+    module.add_function("unlisp_rt_symbol_function", fn_ty, None);
+}
+
+
+
 pub fn gen_defs(ctx: &Context, module: &Module) {
     object_gen_def(ctx);
     list_gen_def(ctx, module);
@@ -286,4 +329,7 @@ pub fn gen_defs(ctx: &Context, module: &Module) {
     unlisp_rt_raise_arity_error_gen_def(ctx, module);
     unlisp_rt_raise_undef_fn_error_gen_def(ctx, module);
     unlisp_rt_run_with_global_ex_handler_gen_def(ctx, module);
+
+    unlisp_rt_symbol_value_gen_def(ctx, module);
+    unlisp_rt_symbol_function_gen_def(ctx, module);
 }
