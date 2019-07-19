@@ -24,7 +24,13 @@ fn codegen_raw_fn(ctx: &mut CodegenContext, closure: &Closure) -> GenResult<Func
         .map_or("lambda", |n| n.as_str());
     let fn_name = ctx.mangle_str(fn_name);
 
-    let mut arity = closure.free_vars.len() + closure.lambda.arglist.len();
+    let free_vars_no_globals: Vec<_> = closure
+        .free_vars
+        .iter()
+        .filter(|n| !is_global_name(ctx, n))
+        .collect();
+
+    let mut arity = free_vars_no_globals.len() + closure.lambda.arglist.len();
 
     if closure.lambda.restarg.is_some() {
         arity += 1;
@@ -40,10 +46,8 @@ fn codegen_raw_fn(ctx: &mut CodegenContext, closure: &Closure) -> GenResult<Func
     ctx.push_env();
     ctx.enter_fn_block(&function);
 
-    let args: Vec<_> = closure
-        .free_vars
-        .iter()
-        .filter(|n| !is_global_name(ctx, n))
+    let args: Vec<_> = free_vars_no_globals
+        .into_iter()
         .chain(closure.lambda.arglist.iter())
         .chain(closure.lambda.restarg.iter())
         .collect();
@@ -189,7 +193,12 @@ fn codegen_invoke_fn(
 
     let mut raw_fn_args = vec![];
 
-    for (i, _) in closure.free_vars.iter().enumerate() {
+    for (i, _) in closure
+        .free_vars
+        .iter()
+        .filter(|n| !is_global_name(ctx, n))
+        .enumerate()
+    {
         let arg_ptr = unsafe {
             ctx.builder.build_struct_gep(
                 struct_ptr_par,
@@ -264,7 +273,12 @@ fn codegen_apply_to_fn(
 
     let mut raw_fn_args = vec![];
 
-    for (i, _) in closure.free_vars.iter().enumerate() {
+    for (i, _) in closure
+        .free_vars
+        .iter()
+        .filter(|n| !is_global_name(ctx, n))
+        .enumerate()
+    {
         let arg_ptr = unsafe {
             ctx.builder.build_struct_gep(
                 struct_ptr_par,
@@ -400,7 +414,12 @@ pub fn compile_closure(ctx: &mut CodegenContext, closure: &Closure) -> CompileRe
             .const_int(closure.lambda.restarg.is_some() as u64, false),
     );
 
-    for (i, var) in closure.free_vars.iter().filter(|n| !is_global_name(ctx, n)).enumerate() {
+    for (i, var) in closure
+        .free_vars
+        .iter()
+        .filter(|n| !is_global_name(ctx, n))
+        .enumerate()
+    {
         let var_val = ctx.lookup_local_name(var).ok_or_else(|| {
             Error::new_compilation_error(format!("undefined symbol: {}", var.as_str()))
         })?;

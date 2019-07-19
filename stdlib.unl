@@ -1,3 +1,6 @@
+(declare-sym true)
+(set-val (quote true) (quote true))
+
 (set-fn (quote list) (lambda (& args) args))
 
 (set-fn
@@ -13,8 +16,7 @@
 
 (set-fn
  (quote emptyp)
- (lambda (list)
-   (if list nil (quote true))))
+ (lambda (list) (if list nil true)))
 
 (set-fn
  (quote append)
@@ -34,11 +36,6 @@
  (quote funcall)
  (lambda funcall (f & args)
    (apply f args)))
-
-(set-fn
- (quote emptyp)
- (lambda (list)
-   (if list nil (quote true))))
 
 (set-fn
  (quote append)
