@@ -168,8 +168,7 @@ impl<'a> CodegenContext<'a> {
         let sym_name_ptr = self.str_literal_as_i8_ptr(name);
 
         let intern_fn = self.lookup_known_fn("unlisp_rt_intern_sym");
-        self
-            .builder
+        self.builder
             .build_call(intern_fn, &[sym_name_ptr.into()], "symbol")
             .try_as_basic_value()
             .left()
@@ -221,11 +220,13 @@ impl<'a> CodegenContext<'a> {
             let sym_val_fn = self.lookup_known_fn("unlisp_rt_symbol_value");
             let sym = self.get_interned_sym(name);
 
-            Some(self.builder
-             .build_call(sym_val_fn, &[sym.into()], "sym_val")
-             .try_as_basic_value()
-             .left()
-             .unwrap())
+            Some(
+                self.builder
+                    .build_call(sym_val_fn, &[sym.into()], "sym_val")
+                    .try_as_basic_value()
+                    .left()
+                    .unwrap(),
+            )
         })
     }
 
@@ -313,31 +314,20 @@ impl<'a> CodegenContext<'a> {
         self.builder.build_call(init_rt_fn, &[], "init_rt");
         self.builder.build_call(code_init_fn, &[], "init_code");
 
-        let sym_name_ptr = self.str_literal_as_i8_ptr("-main");
-        let intern_fn = self.lookup_known_fn("unlisp_rt_intern_sym");
-        let interned_sym_ptr = self
-            .builder
-            .build_call(intern_fn, &[sym_name_ptr.into()], "main_symbol")
-            .try_as_basic_value()
-            .left()
-            .unwrap()
-            .into_pointer_value();
+        let main_sym_ptr = self.get_interned_sym("-main");
 
         let fn_obj_ptr_ptr = unsafe {
             self.builder
-                .build_struct_gep(interned_sym_ptr, 1, "main_fn_obj_ptr_ptr")
+                .build_struct_gep(main_sym_ptr, 1, "main_fn_obj_ptr_ptr")
         };
 
-        let fn_obj_ptr = self
-            .builder
-            .build_load(fn_obj_ptr_ptr, "main_fn_obj_ptr")
-            .into_pointer_value();
+        let fn_obj_ptr = self.builder.build_load(fn_obj_ptr_ptr, "main_fn_obj_ptr");
 
         let run_with_ex_handler_fn = self.lookup_known_fn("unlisp_rt_run_with_global_ex_handler");
 
         let ret_code = self
             .builder
-            .build_call(run_with_ex_handler_fn, &[fn_obj_ptr.into()], "ret_code")
+            .build_call(run_with_ex_handler_fn, &[fn_obj_ptr], "ret_code")
             .try_as_basic_value()
             .left()
             .unwrap();

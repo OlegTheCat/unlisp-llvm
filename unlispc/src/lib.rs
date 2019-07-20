@@ -1,5 +1,3 @@
-extern crate unlisp_rt;
-
 pub mod codegen;
 pub mod error;
 pub mod lexer;

@@ -1,8 +1,3 @@
-extern crate clap;
-extern crate inkwell;
-extern crate unlisp_rt;
-extern crate unlispc;
-
 use inkwell::context::Context;
 
 use std::error::Error;
