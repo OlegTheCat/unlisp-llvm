@@ -375,6 +375,32 @@ unsafe extern "C" fn native_symbol_value_apply(f: *const Function, args: List) -
     native_symbol_value_invoke(f, args.first())
 }
 
+unsafe extern "C" fn native_boundp_invoke(_: *const Function, sym: Object) -> Object {
+    let sym = sym.unpack_symbol();
+    if (*sym).value.is_null() {
+        Object::nil()
+    } else {
+        Object::from_symbol(symbols::get_or_intern_symbol("true".to_string()))
+    }
+}
+
+unsafe extern "C" fn native_boundp_apply(f: *const Function, args: List) -> Object {
+    native_boundp_invoke(f, args.first())
+}
+
+unsafe extern "C" fn native_fboundp_invoke(_: *const Function, sym: Object) -> Object {
+    let sym = sym.unpack_symbol();
+    if (*sym).function.is_null() {
+        Object::nil()
+    } else {
+        Object::from_symbol(symbols::get_or_intern_symbol("true".to_string()))
+    }
+}
+
+unsafe extern "C" fn native_fboundp_apply(f: *const Function, args: List) -> Object {
+    native_fboundp_invoke(f, args.first())
+}
+
 
 pub fn init() {
     init_symbol_fn(
@@ -523,6 +549,22 @@ pub fn init() {
         native_symbol_value_invoke as *const c_void,
         native_symbol_value_apply as *const c_void,
         "symbol-value",
+        &["sym"],
+        false,
+    );
+
+    init_symbol_fn(
+        native_boundp_invoke as *const c_void,
+        native_boundp_apply as *const c_void,
+        "boundp",
+        &["sym"],
+        false,
+    );
+
+    init_symbol_fn(
+        native_fboundp_invoke as *const c_void,
+        native_fboundp_apply as *const c_void,
+        "fboundp",
         &["sym"],
         false,
     );

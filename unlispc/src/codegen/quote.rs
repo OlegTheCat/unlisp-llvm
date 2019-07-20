@@ -6,21 +6,11 @@ use super::context::CodegenContext;
 use super::literal::*;
 
 fn compile_quoted_symbol(ctx: &mut CodegenContext, name: &String) -> BasicValueEnum {
-    let sym_name_ptr = ctx.str_literal_as_i8_ptr(name.as_str());
-
-    let intern_fn = ctx.lookup_known_fn("unlisp_rt_intern_sym");
-    let interned_sym_ptr = ctx
-        .builder
-        .build_call(intern_fn, &[sym_name_ptr.into()], "intern")
-        .try_as_basic_value()
-        .left()
-        .unwrap()
-        .into_pointer_value();
-
-    let intern_fn = ctx.lookup_known_fn("unlisp_rt_object_from_symbol");
+    let interned_sym_ptr = ctx.get_interned_sym(name);
+    let to_obj_fn = ctx.lookup_known_fn("unlisp_rt_object_from_symbol");
 
     ctx.builder
-        .build_call(intern_fn, &[interned_sym_ptr.into()], "object")
+        .build_call(to_obj_fn, &[interned_sym_ptr.into()], "object")
         .try_as_basic_value()
         .left()
         .unwrap()

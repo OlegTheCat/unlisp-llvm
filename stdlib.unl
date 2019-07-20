@@ -227,6 +227,11 @@
        (let ()
          (unqs body)))))
 
+(defmacro unless (c & body)
+  (qquote
+   (when (not (unq c))
+     (unqs body))))
+
 (defun second (list)
   (first (rest list)))
 
@@ -308,3 +313,8 @@
      (declare-sym (unq sym))
      (set-val (quote (unq sym))
               (unq val)))))
+
+(defmacro defonce (sym val)
+  (qquote
+   (unless (boundp (quote (unq sym)))
+     (defvar (unq sym) (unq val)))))
