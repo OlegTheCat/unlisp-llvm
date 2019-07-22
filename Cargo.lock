@@ -245,11 +245,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "unlisp_internal_macros"
+version = "0.1.0"
+dependencies = [
+ "proc-macro2 0.4.30 (registry+https://github.com/rust-lang/crates.io-index)",
+ "quote 0.6.13 (registry+https://github.com/rust-lang/crates.io-index)",
+ "syn 0.15.39 (registry+https://github.com/rust-lang/crates.io-index)",
+]
+
+[[package]]
 name = "unlisp_rt"
 version = "0.1.0"
 dependencies = [
  "cc 1.0.37 (registry+https://github.com/rust-lang/crates.io-index)",
  "libc 0.2.60 (registry+https://github.com/rust-lang/crates.io-index)",
+ "unlisp_internal_macros 0.1.0",
 ]
 
 [[package]]
@@ -258,6 +268,7 @@ version = "0.1.0"
 dependencies = [
  "inkwell 0.1.0 (git+https://github.com/TheDan64/inkwell?branch=llvm7-0)",
  "libc 0.2.60 (registry+https://github.com/rust-lang/crates.io-index)",
+ "unlisp_internal_macros 0.1.0",
  "unlisp_rt 0.1.0",
 ]
 

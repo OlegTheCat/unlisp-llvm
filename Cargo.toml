@@ -1,2 +1,2 @@
 [workspace]
-members = ["unlisp_rt", "unlispc", "unlisp"]
+members = ["internal_macros", "unlisp_rt", "unlispc", "unlisp"]

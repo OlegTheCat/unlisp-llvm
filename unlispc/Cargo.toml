@@ -8,3 +8,4 @@ edition = "2018"
 libc = "0.2"
 inkwell = { git = "https://github.com/TheDan64/inkwell", branch = "llvm7-0" }
 unlisp_rt = { path = "../unlisp_rt" }
+unlisp_internal_macros = { path = "../internal_macros" }

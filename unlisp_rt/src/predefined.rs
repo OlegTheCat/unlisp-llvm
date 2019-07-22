@@ -3,6 +3,8 @@ use crate::error::RuntimeError;
 use crate::exceptions;
 use crate::symbols;
 
+use unlisp_internal_macros::trivial_apply;
+
 use libc::{c_char, c_void};
 use std::ffi::{CStr, CString};
 use std::io::Write;
@@ -99,6 +101,7 @@ unsafe extern "C" fn native_sub_apply(_: *const Function, args: List) -> Object 
     Object::from_int(result)
 }
 
+#[trivial_apply]
 extern "C" fn native_equal_invoke(_: *const Function, x: Object, y: Object) -> Object {
     if x == y {
         x
@@ -107,10 +110,7 @@ extern "C" fn native_equal_invoke(_: *const Function, x: Object, y: Object) -> O
     }
 }
 
-unsafe extern "C" fn native_equal_apply(f: *const Function, args: List) -> Object {
-    native_equal_invoke(f, args.first(), args.rest().first())
-}
-
+#[trivial_apply]
 extern "C" fn native_set_fn_invoke(_: *const Function, sym: Object, func: Object) -> Object {
     let sym = sym.unpack_symbol();
     let func = func.unpack_function();
@@ -120,10 +120,7 @@ extern "C" fn native_set_fn_invoke(_: *const Function, sym: Object, func: Object
     Object::nil()
 }
 
-unsafe extern "C" fn native_set_fn_apply(f: *const Function, args: List) -> Object {
-    native_set_fn_invoke(f, args.first(), args.rest().first())
-}
-
+#[trivial_apply]
 extern "C" fn native_cons_invoke(_: *const Function, x: Object, list: Object) -> Object {
     let list = list.unpack_list();
     let len = unsafe { (*list).len };
@@ -141,10 +138,7 @@ extern "C" fn native_cons_invoke(_: *const Function, x: Object, list: Object) ->
     Object::from_list(Box::into_raw(Box::new(new_list)))
 }
 
-unsafe extern "C" fn native_cons_apply(f: *const Function, args: List) -> Object {
-    native_cons_invoke(f, args.first(), args.rest().first())
-}
-
+#[trivial_apply]
 extern "C" fn native_rest_invoke(_: *const Function, list: Object) -> Object {
     let list = list.unpack_list();
     let len = unsafe { (*list).len };
@@ -157,10 +151,7 @@ extern "C" fn native_rest_invoke(_: *const Function, list: Object) -> Object {
     }
 }
 
-unsafe extern "C" fn native_rest_apply(f: *const Function, args: List) -> Object {
-    native_rest_invoke(f, args.first())
-}
-
+#[trivial_apply]
 unsafe extern "C" fn native_first_invoke(_: *const Function, list: Object) -> Object {
     let list = list.unpack_list();
     let len = (*list).len;
@@ -170,10 +161,6 @@ unsafe extern "C" fn native_first_invoke(_: *const Function, list: Object) -> Ob
     } else {
         (*(*(*list).node).val).clone()
     }
-}
-
-unsafe extern "C" fn native_first_apply(f: *const Function, args: List) -> Object {
-    native_first_invoke(f, args.first())
 }
 
 unsafe fn apply_to_list(f: *const Function, args: List) -> Object {
@@ -221,16 +208,14 @@ unsafe extern "C" fn native_apply_apply(_: *const Function, args: List) -> Objec
     apply_to_list(f, reconsed_args)
 }
 
+#[trivial_apply]
 unsafe extern "C" fn native_symbol_fn_invoke(_: *const Function, sym: Object) -> Object {
     let sym = sym.unpack_symbol();
     let f = unlisp_rt_symbol_function(sym);
     Object::from_function(f)
 }
 
-unsafe extern "C" fn native_symbol_fn_apply(f: *const Function, args: List) -> Object {
-    native_symbol_fn_invoke(f, args.first())
-}
-
+#[trivial_apply]
 unsafe extern "C" fn native_set_macro_invoke(_: *const Function, f: Object) -> Object {
     let f = f.unpack_function();
 
@@ -239,10 +224,7 @@ unsafe extern "C" fn native_set_macro_invoke(_: *const Function, f: Object) -> O
     Object::nil()
 }
 
-unsafe extern "C" fn native_set_macro_apply(f: *const Function, args: List) -> Object {
-    native_set_macro_invoke(f, args.first())
-}
-
+#[trivial_apply]
 unsafe extern "C" fn native_listp_invoke(_: *const Function, x: Object) -> Object {
     if x.ty == ObjType::List {
         Object::from_symbol(symbols::get_or_intern_symbol("true".to_string()))
@@ -251,20 +233,13 @@ unsafe extern "C" fn native_listp_invoke(_: *const Function, x: Object) -> Objec
     }
 }
 
-unsafe extern "C" fn native_listp_apply(f: *const Function, args: List) -> Object {
-    native_set_macro_invoke(f, args.first())
-}
-
+#[trivial_apply]
 unsafe extern "C" fn native_symbolp_invoke(_: *const Function, x: Object) -> Object {
     if x.ty == ObjType::Symbol {
         Object::from_symbol(symbols::get_or_intern_symbol("true".to_string()))
     } else {
         Object::nil()
     }
-}
-
-unsafe extern "C" fn native_symbolp_apply(f: *const Function, args: List) -> Object {
-    native_symbolp_invoke(f, args.first())
 }
 
 pub unsafe fn call_macro(f: *mut Function, args: List) -> Result<Object, RuntimeError> {
@@ -281,6 +256,7 @@ pub unsafe fn call_macro(f: *mut Function, args: List) -> Result<Object, Runtime
     })
 }
 
+#[trivial_apply]
 unsafe extern "C" fn native_macroexpand_1_invoke(_: *const Function, form: Object) -> Object {
     match &form.ty {
         ObjType::List => {
@@ -312,38 +288,26 @@ unsafe extern "C" fn native_macroexpand_1_invoke(_: *const Function, form: Objec
     }
 }
 
-unsafe extern "C" fn native_macroexpand_1_apply(f: *const Function, args: List) -> Object {
-    native_macroexpand_1_invoke(f, args.first())
-}
-
+#[trivial_apply]
 unsafe extern "C" fn native_error_invoke(_: *const Function, msg: Object) -> ! {
     let s = msg.unpack_string();
     let rust_str = CStr::from_ptr(s).to_str().unwrap().to_string();
     exceptions::raise_error(rust_str)
 }
 
-unsafe extern "C" fn native_error_apply(f: *const Function, args: List) -> ! {
-    native_error_invoke(f, args.first())
-}
-
+#[trivial_apply]
 unsafe extern "C" fn native_print_invoke(_: *const Function, x: Object) -> Object {
     print!("{}", x);
     x
 }
 
-unsafe extern "C" fn native_print_apply(f: *const Function, args: List) -> Object {
-    native_print_invoke(f, args.first())
-}
-
+#[trivial_apply]
 unsafe extern "C" fn native_println_invoke(_: *const Function, x: Object) -> Object {
     println!("{}", x);
     x
 }
 
-unsafe extern "C" fn native_println_apply(f: *const Function, args: List) -> Object {
-    native_println_invoke(f, args.first())
-}
-
+#[trivial_apply]
 unsafe extern "C" fn native_stdout_write_invoke(_: *const Function, s: Object) -> Object {
     let s = s.unpack_string();
     let rust_str = CStr::from_ptr(s).to_str().unwrap().to_string();
@@ -352,10 +316,7 @@ unsafe extern "C" fn native_stdout_write_invoke(_: *const Function, s: Object) -
     Object::nil()
 }
 
-unsafe extern "C" fn native_stdout_write_apply(f: *const Function, args: List) -> Object {
-    native_stdout_write_invoke(f, args.first())
-}
-
+#[trivial_apply]
 unsafe extern "C" fn native_set_val_invoke(_: *const Function, sym: Object, val: Object) -> Object {
     let sym = sym.unpack_symbol();
     (*sym).value = Box::into_raw(Box::new(val));
@@ -363,18 +324,12 @@ unsafe extern "C" fn native_set_val_invoke(_: *const Function, sym: Object, val:
     Object::nil()
 }
 
-unsafe extern "C" fn native_set_val_apply(f: *const Function, args: List) -> Object {
-    native_set_val_invoke(f, args.first(), args.rest().first())
-}
-
+#[trivial_apply]
 unsafe extern "C" fn native_symbol_value_invoke(_: *const Function, sym: Object) -> Object {
     unlisp_rt_symbol_value(sym.unpack_symbol())
 }
 
-unsafe extern "C" fn native_symbol_value_apply(f: *const Function, args: List) -> Object {
-    native_symbol_value_invoke(f, args.first())
-}
-
+#[trivial_apply]
 unsafe extern "C" fn native_boundp_invoke(_: *const Function, sym: Object) -> Object {
     let sym = sym.unpack_symbol();
     if (*sym).value.is_null() {
@@ -384,10 +339,7 @@ unsafe extern "C" fn native_boundp_invoke(_: *const Function, sym: Object) -> Ob
     }
 }
 
-unsafe extern "C" fn native_boundp_apply(f: *const Function, args: List) -> Object {
-    native_boundp_invoke(f, args.first())
-}
-
+#[trivial_apply]
 unsafe extern "C" fn native_fboundp_invoke(_: *const Function, sym: Object) -> Object {
     let sym = sym.unpack_symbol();
     if (*sym).function.is_null() {
@@ -396,11 +348,6 @@ unsafe extern "C" fn native_fboundp_invoke(_: *const Function, sym: Object) -> O
         Object::from_symbol(symbols::get_or_intern_symbol("true".to_string()))
     }
 }
-
-unsafe extern "C" fn native_fboundp_apply(f: *const Function, args: List) -> Object {
-    native_fboundp_invoke(f, args.first())
-}
-
 
 pub fn init() {
     init_symbol_fn(
