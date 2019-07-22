@@ -13,7 +13,7 @@ use super::top_level::compile_hirs;
 use std::iter;
 
 fn is_global_name(ctx: &CodegenContext, name: &String) -> bool {
-    ctx.lookup_local_name(name).is_none() && ctx.is_global_sym(name)
+    ctx.lookup_local_name(name).is_none() && ctx.is_global_var(name)
 }
 
 fn codegen_raw_fn(ctx: &mut CodegenContext, closure: &Closure) -> GenResult<FunctionValue> {

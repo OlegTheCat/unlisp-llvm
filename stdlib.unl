@@ -1,24 +1,24 @@
-(declare-sym true)
-(set-val (quote true) (quote true))
+(declare-var true)
+(set-symbol-value (quote true) (quote true))
 
-(set-fn (quote list) (lambda (& args) args))
+(set-symbol-function (quote list) (lambda (& args) args))
 
-(set-fn
+(set-symbol-function
  (quote list*)
  (lambda list* (& args)
    (apply (symbol-function (quote apply))
           (symbol-function (quote list)) args)))
 
-(set-fn
+(set-symbol-function
  (quote funcall)
  (lambda funcall (f & args)
    (apply f args)))
 
-(set-fn
+(set-symbol-function
  (quote emptyp)
  (lambda (list) (if list nil true)))
 
-(set-fn
+(set-symbol-function
  (quote append)
  (lambda append (x y)
    (if (emptyp x)
@@ -26,18 +26,18 @@
        (cons (first x)
              (append (rest x) y)))))
 
-(set-fn
+(set-symbol-function
  (quote list*)
  (lambda list* (& args)
    (apply (symbol-function (quote apply))
           (symbol-function (quote list)) args)))
 
-(set-fn
+(set-symbol-function
  (quote funcall)
  (lambda funcall (f & args)
    (apply f args)))
 
-(set-fn
+(set-symbol-function
  (quote append)
  (lambda append (x y)
    (if (emptyp x)
@@ -45,7 +45,7 @@
        (cons (first x)
              (append (rest x) y)))))
 
-(set-fn
+(set-symbol-function
  (quote reduce)
  (lambda reduce (f init list)
    (if (emptyp list)
@@ -56,7 +56,7 @@
         (rest list)))))
 
 
-(set-fn
+(set-symbol-function
  (quote reverse-inner)
  (lambda (x acc)
    (if (emptyp x)
@@ -65,39 +65,39 @@
         (rest x)
         (cons (first x) acc)))))
 
-(set-fn
+(set-symbol-function
  (quote reverse)
  (lambda reverse (x)
    (reverse-inner x ())))
 
-(set-fn
+(set-symbol-function
  (quote not)
  (lambda not (x)
-   (if x nil (quote true))))
+   (if x nil true)))
 
 
-(set-fn
+(set-symbol-function
  (quote unq)
  (lambda unq (x)
    (error "unq outside of qquote")))
 
 (set-macro (symbol-function (quote unq)))
 
-(set-fn
+(set-symbol-function
  (quote unqs)
  (lambda unqs (x)
    (error "unqs outside of qquote")))
 
 (set-macro (symbol-function (quote unqs)))
 
-(set-fn
+(set-symbol-function
  (quote qquote)
  (lambda quote (x)
    (qquote-process x)))
 
 (set-macro (symbol-function (quote qquote)))
 
-(set-fn
+(set-symbol-function
  (quote qquote-process)
  (lambda qquote-process (x)
    (if (not (listp x))
@@ -112,12 +112,12 @@
                        (error "unqs after qquote")
                        (qquote-transform-list x))))))))
 
-(set-fn
+(set-symbol-function
  (quote qquote-transform-list)
  (lambda qquote-transform-list (x)
    (qquote-transform-list-inner x ())))
 
-(set-fn
+(set-symbol-function
  (quote qquote-transform-list-inner)
  (lambda qquote-transform-list-inner (x transformed-acc)
    (if (emptyp x)
@@ -129,7 +129,7 @@
         (cons (qquote-transform-list-item (first x))
               transformed-acc)))))
 
-(set-fn
+(set-symbol-function
  (quote qquote-transform-list-item)
  (lambda qquote-transform-list-item (x)
    (if (not (listp x))
@@ -142,13 +142,13 @@
                    (first (rest x))
                    (list (quote list) (qquote-process x))))))))
 
-(set-fn
+(set-symbol-function
  (quote defmacro)
  (lambda defmacro (name args & body)
    (qquote
     (let ((--macro-fn (lambda (unq name) (unq args)
                         (unqs body))))
-      (set-fn
+      (set-symbol-function
        (quote (unq name))
        --macro-fn)
       (set-macro --macro-fn)))))
@@ -157,7 +157,7 @@
 
 (defmacro defun (name args & body)
   (qquote
-   (set-fn
+   (set-symbol-function
     (quote (unq name))
     (lambda (unq name) (unq args)
       (unqs body)))))
@@ -200,7 +200,7 @@
 
 (defmacro and (& forms)
   (let ((reversed (if (emptyp forms)
-                      (list (quote true))
+                      (list true)
                       (reverse forms))))
     (reduce
      (lambda (acc form)
@@ -310,8 +310,8 @@
 (defmacro defvar (sym val)
   (qquote
    (let ()
-     (declare-sym (unq sym))
-     (set-val (quote (unq sym))
+     (declare-var (unq sym))
+     (set-symbol-value (quote (unq sym))
               (unq val)))))
 
 (defmacro defonce (sym val)

@@ -82,6 +82,25 @@ nil
 3
 ```
 
+### Global variables
+
+```
+>>> (defvar x 100)
+nil
+>>> x
+100
+
+
+>>> (defonce y 200)
+nil
+>>> y
+200
+>>> (defonce y 300)
+nil
+>>> y
+200
+```
+
 ### "Standard library"
 
 It is located in file [`stdlib.unl`](https://github.com/OlegTheCat/unlisp-llvm/blob/master/stdlib.unl).

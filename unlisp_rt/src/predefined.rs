@@ -430,7 +430,7 @@ pub fn init() {
     init_symbol_fn(
         native_set_fn_invoke as *const c_void,
         native_set_fn_apply as *const c_void,
-        "set-fn",
+        "set-symbol-function",
         &["sym", "func"],
         false,
     );
@@ -540,7 +540,7 @@ pub fn init() {
     init_symbol_fn(
         native_set_val_invoke as *const c_void,
         native_set_val_apply as *const c_void,
-        "set-val",
+        "set-symbol-value",
         &["sym", "val"],
         false,
     );

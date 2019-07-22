@@ -72,7 +72,7 @@ pub struct Call {
 }
 
 #[derive(Debug, PartialEq, Eq, Clone)]
-pub struct DeclareSym {
+pub struct DeclareVar {
     pub var_name: String,
 }
 
@@ -87,7 +87,7 @@ pub enum Literal {
 
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub enum HIR {
-    DeclareSym(DeclareSym),
+    DeclareVar(DeclareVar),
     Literal(Literal),
     Lambda(Lambda),
     Closure(Closure),
@@ -312,25 +312,25 @@ fn forms_to_hir(forms: &Vec<Form>) -> Result<HIR, Box<dyn Error>> {
 
                 Ok(HIR::Lambda(lambda))
             }
-            Form::Symbol(s) if is(s, "declare-sym") => {
+            Form::Symbol(s) if is(s, "declare-var") => {
                 let sym = forms
                     .get(1)
-                    .ok_or_else(|| error::Error::new_syntax_error("no symbol in declare-sym"))?;
+                    .ok_or_else(|| error::Error::new_syntax_error("no symbol in declare-var"))?;
                 let sym = to_symbol(sym)
-                    .ok_or_else(|| error::Error::new_syntax_error("not a symbol in declare-sym"))?;
+                    .ok_or_else(|| error::Error::new_syntax_error("not a symbol in declare-var"))?;
 
                 if forms.get(2).is_some() {
                     Err(error::Error::new_syntax_error(format!(
-                        "wrong number of arguments ({}) passed to declare-sym",
+                        "wrong number of arguments ({}) passed to declare-var",
                         forms.len() - 1
                     )))?
                 }
 
-                let decl_s = DeclareSym {
+                let decl_var = DeclareVar {
                     var_name: sym.clone(),
                 };
 
-                Ok(HIR::DeclareSym(decl_s))
+                Ok(HIR::DeclareVar(decl_var))
             }
             Form::Symbol(s) => unsafe {
                 let call_sym = symbols::get_or_intern_symbol(s.clone());
@@ -480,7 +480,7 @@ fn convert_lambda_body_item(
 
             HIR::If(converted)
         }
-        HIR::DeclareSym(decl_s) => HIR::DeclareSym(decl_s.clone())
+        HIR::DeclareVar(decl_var) => HIR::DeclareVar(decl_var.clone()),
     }
 }
 
@@ -550,7 +550,7 @@ pub fn convert_into_closures(hir: &HIR) -> HIR {
             HIR::If(converted)
         }
 
-        HIR::DeclareSym(decl_s) => HIR::DeclareSym(decl_s.clone())
+        HIR::DeclareVar(decl_var) => HIR::DeclareVar(decl_var.clone()),
     }
 }
 

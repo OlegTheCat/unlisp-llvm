@@ -107,11 +107,11 @@ impl<'a> CodegenContext<'a> {
         self.str_literal_globals = HashMap::new();
     }
 
-    pub fn declare_global_sym(&mut self, name: &String) {
+    pub fn declare_global_var(&mut self, name: &String) {
         self.declared_syms.insert(name.clone());
     }
 
-    pub fn is_global_sym(&self, name: &String) -> bool {
+    pub fn is_global_var(&self, name: &String) -> bool {
         self.declared_syms.get(name).is_some()
     }
 
