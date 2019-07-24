@@ -45,12 +45,15 @@ pub fn trivial_apply(
     let parsed_invoke = syn::parse_macro_input!(item as syn::ItemFn);
 
     if parsed_invoke.decl.variadic.is_some() {
-        panic!("Cannot derive trivial apply for variadic functions");
+        panic!("cannot derive trivial apply for variadic functions");
     }
 
     let abi = &parsed_invoke.abi;
 
-    let apply_fn_name_str = format!("{}_apply", parsed_invoke.ident.to_string().replace("_invoke", ""));
+    let apply_fn_name_str = format!(
+        "{}_apply",
+        parsed_invoke.ident.to_string().replace("_invoke", "")
+    );
     let apply_fn_name = Ident::new(apply_fn_name_str.as_str(), Span::call_site());
 
     let f_arg_ident = Ident::new("f", Span::call_site());
@@ -65,6 +68,43 @@ pub fn trivial_apply(
                                       #args_list_ident: crate::defs::List) -> crate::defs::Object
             #apply_body
 
+    };
+
+    result.into()
+}
+
+#[proc_macro_attribute]
+pub fn runtime_fn(
+    _attr: proc_macro::TokenStream,
+    item: proc_macro::TokenStream,
+) -> proc_macro::TokenStream {
+    let parsed_fn = syn::parse_macro_input!(item as syn::ItemFn);
+    let fn_ident = &parsed_fn.ident;
+    let args = &parsed_fn.decl.inputs;
+    let ret_ty = &parsed_fn.decl.output;
+    let abi = &parsed_fn.abi;
+    let unsafety = &parsed_fn.unsafety;
+
+    if parsed_fn.decl.variadic.is_some() {
+        panic!("runtime fn cannot be variadic");
+    }
+
+    if !parsed_fn.decl.generics.params.is_empty() {
+        panic!("runtime fn cannot be generic");
+    }
+
+    let used_ident = Ident::new(
+        format!("___USED_{}", fn_ident.to_string().to_uppercase()).as_str(),
+        Span::call_site(),
+    );
+
+    let result = quote! {
+        #[inline(never)]
+        #[no_mangle]
+        #parsed_fn
+
+        #[used]
+        static #used_ident: #unsafety #abi fn(#args) #ret_ty  = #fn_ident;
     };
 
     result.into()

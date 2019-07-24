@@ -8,6 +8,8 @@ use std::ptr;
 
 use crate::{exceptions, predefined, symbols};
 
+use unlisp_internal_macros::runtime_fn;
+
 // TODO: revise usage of Copy here
 #[derive(Clone, Copy)]
 #[repr(C)]
@@ -311,63 +313,42 @@ impl Function {
     pub const FIELDS_COUNT: u32 = 8;
 }
 
-#[no_mangle]
+#[runtime_fn]
 pub extern "C" fn unlisp_rt_intern_sym(name: *const c_char) -> *mut Symbol {
     symbols::get_or_intern_symbol_by_ptr(name)
 }
 
-#[used]
-static INTERN_SYM: extern "C" fn(name: *const c_char) -> *mut Symbol = unlisp_rt_intern_sym;
-
-#[no_mangle]
+#[runtime_fn]
 pub extern "C" fn unlisp_rt_object_from_int(i: i64) -> Object {
     Object::from_int(i)
 }
 
-#[used]
-static OBJ_FROM_INT: extern "C" fn(i: i64) -> Object = unlisp_rt_object_from_int;
-
-#[no_mangle]
+#[runtime_fn]
 pub extern "C" fn unlisp_rt_object_from_string(string: *const c_char) -> Object {
     Object::from_string(string)
 }
 
-#[used]
-static OBJ_FROM_STRING: extern "C" fn(*const c_char) -> Object = unlisp_rt_object_from_string;
-
-#[no_mangle]
+#[runtime_fn]
 pub extern "C" fn unlisp_rt_int_from_obj(o: Object) -> i64 {
     o.unpack_int()
 }
 
-#[used]
-static INT_FROM_OBJ: extern "C" fn(Object) -> i64 = unlisp_rt_int_from_obj;
-
-#[no_mangle]
+#[runtime_fn]
 pub extern "C" fn unlisp_rt_object_from_function(f: *mut Function) -> Object {
     Object::from_function(f)
 }
 
-#[used]
-static OBJ_FROM_FN: extern "C" fn(f: *mut Function) -> Object = unlisp_rt_object_from_function;
-
-#[no_mangle]
+#[runtime_fn]
 pub extern "C" fn unlisp_rt_object_from_symbol(s: *mut Symbol) -> Object {
     Object::from_symbol(s)
 }
 
-#[used]
-static OBJ_FROM_SYM: extern "C" fn(f: *mut Symbol) -> Object = unlisp_rt_object_from_symbol;
-
-#[no_mangle]
+#[runtime_fn]
 pub extern "C" fn unlisp_rt_object_from_list(list: List) -> Object {
     Object::from_list(Box::into_raw(Box::new(list)))
 }
 
-#[used]
-static OBJ_FROM_LIST: extern "C" fn(List) -> Object = unlisp_rt_object_from_list;
-
-#[no_mangle]
+#[runtime_fn]
 pub extern "C" fn unlisp_rt_object_is_nil(o: Object) -> bool {
     o.ty == ObjType::List && {
         let list_ptr = o.unpack_list();
@@ -375,10 +356,7 @@ pub extern "C" fn unlisp_rt_object_is_nil(o: Object) -> bool {
     }
 }
 
-#[used]
-static IS_NIL: extern "C" fn(Object) -> bool = unlisp_rt_object_is_nil;
-
-#[no_mangle]
+#[runtime_fn]
 pub extern "C" fn unlisp_rt_nil_object() -> Object {
     let list = List {
         node: ptr::null_mut(),
@@ -388,10 +366,7 @@ pub extern "C" fn unlisp_rt_nil_object() -> Object {
     Object::from_list(Box::into_raw(Box::new(list)))
 }
 
-#[used]
-static NIL_OBJ: extern "C" fn() -> Object = unlisp_rt_nil_object;
-
-#[no_mangle]
+#[runtime_fn]
 pub extern "C" fn unlisp_rt_check_arity(f: *const Function, arg_count: u64) -> bool {
     let has_restarg = unsafe { (*f).has_restarg };
     let params_count = unsafe { (*f).arg_count };
@@ -400,10 +375,6 @@ pub extern "C" fn unlisp_rt_check_arity(f: *const Function, arg_count: u64) -> b
 
     !is_incorrect
 }
-
-#[used]
-static CHECK_ARITY: extern "C" fn(f: *const Function, arg_count: u64) -> bool =
-    unlisp_rt_check_arity;
 
 extern "C" {
     pub fn va_list_to_obj_array(n: u64, list: VaList) -> *mut Object;
@@ -430,7 +401,7 @@ pub fn obj_array_to_list(n: u64, arr: *mut Object, list: Option<*mut List>) -> *
     list
 }
 
-#[no_mangle]
+#[runtime_fn]
 pub extern "C" fn unlisp_rt_va_list_into_list(n: u64, va_list: VaList) -> Object {
     let obj_array = unsafe { va_list_to_obj_array(n, va_list) };
     let list = obj_array_to_list(n, obj_array, None);
@@ -438,36 +409,22 @@ pub extern "C" fn unlisp_rt_va_list_into_list(n: u64, va_list: VaList) -> Object
     Object::from_list(list)
 }
 
-#[used]
-static VALIST_TO_LIST: extern "C" fn(n: u64, va_list: VaList) -> Object =
-    unlisp_rt_va_list_into_list;
-
-#[no_mangle]
+#[runtime_fn]
 pub unsafe extern "C" fn unlisp_rt_list_first(list: List) -> Object {
     list.first()
 }
 
-#[used]
-static LIST_FIRST: unsafe extern "C" fn(List) -> Object = unlisp_rt_list_first;
-
-#[no_mangle]
+#[runtime_fn]
 pub unsafe extern "C" fn unlisp_rt_list_rest(list: List) -> List {
     list.rest()
 }
 
-#[used]
-static LIST_REST: unsafe extern "C" fn(List) -> List = unlisp_rt_list_rest;
-
-#[no_mangle]
+#[runtime_fn]
 pub unsafe extern "C" fn unlisp_rt_list_cons(el: Object, list: List) -> List {
     list.cons(el)
 }
 
-#[used]
-static LIST_CONS: unsafe extern "C" fn(Object, List) -> List = unlisp_rt_list_cons;
-
-#[inline(never)]
-#[no_mangle]
+#[runtime_fn]
 pub extern "C" fn unlisp_rt_empty_list() -> List {
     let list = List {
         node: ptr::null_mut(),
@@ -477,21 +434,13 @@ pub extern "C" fn unlisp_rt_empty_list() -> List {
     list
 }
 
-#[used]
-static EMPTY_LIST: extern "C" fn() -> List = unlisp_rt_empty_list;
-
-#[inline(never)]
-#[no_mangle]
+#[runtime_fn]
 pub extern "C" fn unlisp_rt_init_runtime() {
     symbols::init();
     predefined::init();
 }
 
-#[used]
-static INIT_RT: extern "C" fn() = unlisp_rt_init_runtime;
-
-#[inline(never)]
-#[no_mangle]
+#[runtime_fn]
 pub unsafe extern "C" fn unlisp_rt_symbol_value(sym: *mut Symbol) -> Object {
     let val = (*sym).value;
 
@@ -503,11 +452,7 @@ pub unsafe extern "C" fn unlisp_rt_symbol_value(sym: *mut Symbol) -> Object {
     (*val).clone()
 }
 
-#[used]
-static SYM_VAL: unsafe extern "C" fn(*mut Symbol) -> Object = unlisp_rt_symbol_value;
-
-#[inline(never)]
-#[no_mangle]
+#[runtime_fn]
 pub unsafe extern "C" fn unlisp_rt_symbol_function(sym: *mut Symbol) -> *mut Function {
     let f = (*sym).function;
 
@@ -518,6 +463,3 @@ pub unsafe extern "C" fn unlisp_rt_symbol_function(sym: *mut Symbol) -> *mut Fun
 
     f
 }
-
-#[used]
-static SYM_FN: unsafe extern "C" fn(*mut Symbol) -> *mut Function = unlisp_rt_symbol_function;

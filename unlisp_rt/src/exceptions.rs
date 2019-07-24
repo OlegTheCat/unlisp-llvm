@@ -6,6 +6,8 @@ use std::ptr;
 use crate::defs::{Function, Object};
 use crate::error::RuntimeError;
 
+use unlisp_internal_macros::runtime_fn;
+
 const JMP_BUF_SIZE: usize = mem::size_of::<u32>() * 40;
 
 type JmpBuf = [i8; JMP_BUF_SIZE];
@@ -59,8 +61,7 @@ pub unsafe fn run_with_global_ex_handler<F: FnOnce() -> Object>(
     result
 }
 
-#[inline(never)]
-#[no_mangle]
+#[runtime_fn]
 pub unsafe extern "C" fn unlisp_rt_run_with_global_ex_handler(f: *mut Function) -> i32 {
     let invoke_fn: unsafe extern "C" fn(*const Function) -> Object =
         mem::transmute((*f).invoke_f_ptr);
@@ -73,10 +74,6 @@ pub unsafe extern "C" fn unlisp_rt_run_with_global_ex_handler(f: *mut Function) 
         }
     }
 }
-
-#[used]
-static RUN_WITH_GLOB_EX_HANDLER: unsafe extern "C" fn(*mut Function) -> i32 =
-    unlisp_rt_run_with_global_ex_handler;
 
 pub unsafe fn raise_error(msg: String) -> ! {
     ERR_MSG_PTR = Box::into_raw(Box::new(msg)) as *mut i8;
@@ -110,8 +107,7 @@ pub unsafe fn raise_error(msg: String) -> ! {
 //     module.add_function("longjmp", lj_fn_ty, Some(Linkage::External));
 // }
 
-#[inline(never)]
-#[no_mangle]
+#[runtime_fn]
 pub unsafe extern "C" fn unlisp_rt_raise_arity_error(
     name: *const c_char,
     _expected: u64,
@@ -131,15 +127,7 @@ pub unsafe extern "C" fn unlisp_rt_raise_arity_error(
     raise_error(msg);
 }
 
-#[used]
-static RAISE_ARITY_ERROR: unsafe extern "C" fn(
-    name: *const c_char,
-    expected: u64,
-    actual: u64,
-) -> ! = unlisp_rt_raise_arity_error;
-
-#[inline(never)]
-#[no_mangle]
+#[runtime_fn]
 pub unsafe extern "C" fn unlisp_rt_raise_undef_fn_error(name: *const c_char) -> ! {
     let name_str = CStr::from_ptr(name).to_str().unwrap();
 
@@ -147,10 +135,6 @@ pub unsafe extern "C" fn unlisp_rt_raise_undef_fn_error(name: *const c_char) -> 
 
     raise_error(msg);
 }
-
-#[used]
-static RAISE_UNDEF_FN_ERROR: unsafe extern "C" fn(name: *const c_char) -> ! =
-    unlisp_rt_raise_undef_fn_error;
 
 pub unsafe fn raise_cast_error(from: String, to: String) -> ! {
     let msg = format!("cannot cast {} to {}", from, to);
