@@ -6,9 +6,12 @@ use std::ffi::VaList;
 use std::fmt;
 use std::ptr;
 
-use crate::{exceptions, predefined, symbols};
+use inkwell::context::Context;
+use inkwell::module::Module;
+use inkwell::AddressSpace;
 
-use unlisp_internal_macros::runtime_fn;
+use crate::{exceptions, predefined, symbols};
+use unlisp_internal_macros::{gen_llvm_defs, runtime_fn};
 
 // TODO: revise usage of Copy here
 #[derive(Clone, Copy)]
@@ -71,6 +74,14 @@ impl PartialEq for Object {
 }
 
 impl Object {
+    pub fn gen_llvm_def(context: &Context, _module: &Module) {
+        let int8_ptr_ty = context.i8_type().ptr_type(AddressSpace::Generic);
+        let int32_ty = context.i32_type();
+
+        let struct_ty = context.opaque_struct_type("unlisp_rt_object");
+        struct_ty.set_body(&[int32_ty.into(), int8_ptr_ty.into()], false);
+    }
+
     fn type_err(&self, target_ty: ObjType) -> ! {
         unsafe { exceptions::raise_cast_error(format!("{}", self.ty), format!("{}", target_ty)) };
     }
@@ -243,6 +254,14 @@ impl PartialEq for List {
 }
 
 impl List {
+    pub fn gen_llvm_def(context: &Context, _module: &Module) {
+        let i64_ty = context.i64_type();
+        let i8_ptr_ty = context.i8_type().ptr_type(AddressSpace::Generic);
+        let struct_ty = context.opaque_struct_type("unlisp_rt_list");
+
+        struct_ty.set_body(&[i8_ptr_ty.into(), i64_ty.into()], false);
+    }
+
     pub fn empty() -> List {
         List {
             node: ptr::null_mut(),
@@ -281,6 +300,29 @@ pub struct Symbol {
 }
 
 impl Symbol {
+    pub fn gen_llvm_def(context: &Context, module: &Module) {
+        let func_struct_ty = module
+            .get_type("unlisp_rt_function")
+            .unwrap()
+            .into_struct_type();
+
+        let obj_struct_ty = module
+            .get_type("unlisp_rt_object")
+            .unwrap()
+            .into_struct_type();
+
+        let name_ptr_ty = context.i8_type().ptr_type(AddressSpace::Generic);
+        let func_ptr_ty = func_struct_ty.ptr_type(AddressSpace::Generic);
+        let value_ptr_ty = obj_struct_ty.ptr_type(AddressSpace::Generic);
+
+        let struct_ty = context.opaque_struct_type("unlisp_rt_symbol");
+
+        struct_ty.set_body(&[name_ptr_ty.into(),
+                             func_ptr_ty.into(),
+                             value_ptr_ty.into()],
+                           false);
+    }
+
     pub fn new(name: *const c_char) -> Self {
         Self {
             name: name,
@@ -311,155 +353,214 @@ pub struct Function {
 
 impl Function {
     pub const FIELDS_COUNT: u32 = 8;
-}
 
-#[runtime_fn]
-pub extern "C" fn unlisp_rt_intern_sym(name: *const c_char) -> *mut Symbol {
-    symbols::get_or_intern_symbol_by_ptr(name)
-}
+    pub fn gen_llvm_def(context: &Context, _module: &Module) {
+        let fn_struct_ty = context.opaque_struct_type("unlisp_rt_function");
 
-#[runtime_fn]
-pub extern "C" fn unlisp_rt_object_from_int(i: i64) -> Object {
-    Object::from_int(i)
-}
+        let ty_ty = context.i32_type();
+        let ty_name = context.i8_type().ptr_type(AddressSpace::Generic);
+        let ty_arglist = context
+            .i8_type()
+            .ptr_type(AddressSpace::Generic)
+            .ptr_type(AddressSpace::Generic);
+        let ty_arg_count = context.i64_type();
+        let ty_is_macro = context.bool_type();
+        let ty_invoke_f_ptr = context.i8_type().ptr_type(AddressSpace::Generic);
+        let ty_apply_to_f_ptr = context.i8_type().ptr_type(AddressSpace::Generic);
+        let ty_has_restarg = context.bool_type();
 
-#[runtime_fn]
-pub extern "C" fn unlisp_rt_object_from_string(string: *const c_char) -> Object {
-    Object::from_string(string)
-}
-
-#[runtime_fn]
-pub extern "C" fn unlisp_rt_int_from_obj(o: Object) -> i64 {
-    o.unpack_int()
-}
-
-#[runtime_fn]
-pub extern "C" fn unlisp_rt_object_from_function(f: *mut Function) -> Object {
-    Object::from_function(f)
-}
-
-#[runtime_fn]
-pub extern "C" fn unlisp_rt_object_from_symbol(s: *mut Symbol) -> Object {
-    Object::from_symbol(s)
-}
-
-#[runtime_fn]
-pub extern "C" fn unlisp_rt_object_from_list(list: List) -> Object {
-    Object::from_list(Box::into_raw(Box::new(list)))
-}
-
-#[runtime_fn]
-pub extern "C" fn unlisp_rt_object_is_nil(o: Object) -> bool {
-    o.ty == ObjType::List && {
-        let list_ptr = o.unpack_list();
-        unsafe { (*list_ptr).len == 0 }
+        fn_struct_ty.set_body(
+            &[
+                ty_ty.into(),
+                ty_name.into(),
+                ty_arglist.into(),
+                ty_arg_count.into(),
+                ty_is_macro.into(),
+                ty_invoke_f_ptr.into(),
+                ty_apply_to_f_ptr.into(),
+                ty_has_restarg.into(),
+            ],
+            false,
+        );
     }
 }
 
-#[runtime_fn]
-pub extern "C" fn unlisp_rt_nil_object() -> Object {
-    let list = List {
-        node: ptr::null_mut(),
-        len: 0,
-    };
+pub fn va_gen_llvm_def(ctx: &Context, module: &Module) {
+    let i32_ty = ctx.i32_type();
+    let i8_ptr_ty = ctx.i8_type().ptr_type(AddressSpace::Generic);
 
-    Object::from_list(Box::into_raw(Box::new(list)))
+    let va_list_ty = ctx.opaque_struct_type("va_list");
+
+    va_list_ty.set_body(
+        &[
+            i32_ty.into(),
+            i32_ty.into(),
+            i8_ptr_ty.into(),
+            i8_ptr_ty.into(),
+        ],
+        false,
+    );
+
+    let va_start_end_ty = ctx.void_type().fn_type(&[i8_ptr_ty.into()], false);
+    module.add_function("llvm.va_start", va_start_end_ty, None);
+    module.add_function("llvm.va_end", va_start_end_ty, None);
 }
 
-#[runtime_fn]
-pub extern "C" fn unlisp_rt_check_arity(f: *const Function, arg_count: u64) -> bool {
-    let has_restarg = unsafe { (*f).has_restarg };
-    let params_count = unsafe { (*f).arg_count };
+#[gen_llvm_defs]
+mod runtime_fns {
 
-    let is_incorrect = (arg_count < params_count) || (!has_restarg && params_count != arg_count);
+    use super::*;
 
-    !is_incorrect
-}
+    #[runtime_fn]
+    pub extern "C" fn unlisp_rt_intern_sym(name: *const c_char) -> *mut Symbol {
+        symbols::get_or_intern_symbol_by_ptr(name)
+    }
 
-extern "C" {
-    pub fn va_list_to_obj_array(n: u64, list: VaList) -> *mut Object;
-}
+    #[runtime_fn]
+    pub extern "C" fn unlisp_rt_object_from_int(i: i64) -> Object {
+        Object::from_int(i)
+    }
 
-pub fn obj_array_to_list(n: u64, arr: *mut Object, list: Option<*mut List>) -> *mut List {
-    let mut list = list.unwrap_or_else(|| {
-        Box::into_raw(Box::new(List {
+    #[runtime_fn]
+    pub extern "C" fn unlisp_rt_object_from_string(string: *const c_char) -> Object {
+        Object::from_string(string)
+    }
+
+    #[runtime_fn]
+    pub extern "C" fn unlisp_rt_int_from_obj(o: Object) -> i64 {
+        o.unpack_int()
+    }
+
+    #[runtime_fn]
+    pub extern "C" fn unlisp_rt_object_from_function(f: *mut Function) -> Object {
+        Object::from_function(f)
+    }
+
+    #[runtime_fn]
+    pub extern "C" fn unlisp_rt_object_from_symbol(s: *mut Symbol) -> Object {
+        Object::from_symbol(s)
+    }
+
+    #[runtime_fn]
+    pub extern "C" fn unlisp_rt_object_from_list(list: List) -> Object {
+        Object::from_list(Box::into_raw(Box::new(list)))
+    }
+
+    #[runtime_fn]
+    pub extern "C" fn unlisp_rt_object_is_nil(o: Object) -> bool {
+        o.ty == ObjType::List && {
+            let list_ptr = o.unpack_list();
+            unsafe { (*list_ptr).len == 0 }
+        }
+    }
+
+    #[runtime_fn]
+    pub extern "C" fn unlisp_rt_nil_object() -> Object {
+        let list = List {
             node: ptr::null_mut(),
             len: 0,
-        }))
-    });
+        };
 
-    for i in (0..n).rev() {
-        list = Box::into_raw(Box::new(List {
-            len: unsafe { (*list).len } + 1,
-            node: Box::into_raw(Box::new(Node {
-                val: unsafe { arr.offset(i as isize) },
-                next: list,
-            })),
-        }))
+        Object::from_list(Box::into_raw(Box::new(list)))
     }
 
-    list
-}
+    #[runtime_fn]
+    pub extern "C" fn unlisp_rt_check_arity(f: *const Function, arg_count: u64) -> bool {
+        let has_restarg = unsafe { (*f).has_restarg };
+        let params_count = unsafe { (*f).arg_count };
 
-#[runtime_fn]
-pub extern "C" fn unlisp_rt_va_list_into_list(n: u64, va_list: VaList) -> Object {
-    let obj_array = unsafe { va_list_to_obj_array(n, va_list) };
-    let list = obj_array_to_list(n, obj_array, None);
+        let is_incorrect = (arg_count < params_count) || (!has_restarg && params_count != arg_count);
 
-    Object::from_list(list)
-}
-
-#[runtime_fn]
-pub unsafe extern "C" fn unlisp_rt_list_first(list: List) -> Object {
-    list.first()
-}
-
-#[runtime_fn]
-pub unsafe extern "C" fn unlisp_rt_list_rest(list: List) -> List {
-    list.rest()
-}
-
-#[runtime_fn]
-pub unsafe extern "C" fn unlisp_rt_list_cons(el: Object, list: List) -> List {
-    list.cons(el)
-}
-
-#[runtime_fn]
-pub extern "C" fn unlisp_rt_empty_list() -> List {
-    let list = List {
-        node: ptr::null_mut(),
-        len: 0,
-    };
-
-    list
-}
-
-#[runtime_fn]
-pub extern "C" fn unlisp_rt_init_runtime() {
-    symbols::init();
-    predefined::init();
-}
-
-#[runtime_fn]
-pub unsafe extern "C" fn unlisp_rt_symbol_value(sym: *mut Symbol) -> Object {
-    let val = (*sym).value;
-
-    if val.is_null() {
-        let rsym_name = CStr::from_ptr((*sym).name).to_str().unwrap().to_string();
-        exceptions::raise_error(format!("unbound symbol: {}", rsym_name))
+        !is_incorrect
     }
 
-    (*val).clone()
-}
-
-#[runtime_fn]
-pub unsafe extern "C" fn unlisp_rt_symbol_function(sym: *mut Symbol) -> *mut Function {
-    let f = (*sym).function;
-
-    if f.is_null() {
-        let rsym_name = CStr::from_ptr((*sym).name).to_str().unwrap().to_string();
-        exceptions::raise_error(format!("undefined function: {}", rsym_name))
+    extern "C" {
+        pub fn va_list_to_obj_array(n: u64, list: VaList) -> *mut Object;
     }
 
-    f
+    pub fn obj_array_to_list(n: u64, arr: *mut Object, list: Option<*mut List>) -> *mut List {
+        let mut list = list.unwrap_or_else(|| {
+            Box::into_raw(Box::new(List {
+                node: ptr::null_mut(),
+                len: 0,
+            }))
+        });
+
+        for i in (0..n).rev() {
+            list = Box::into_raw(Box::new(List {
+                len: unsafe { (*list).len } + 1,
+                node: Box::into_raw(Box::new(Node {
+                    val: unsafe { arr.offset(i as isize) },
+                    next: list,
+                })),
+            }))
+        }
+
+        list
+    }
+
+    #[runtime_fn]
+    pub extern "C" fn unlisp_rt_va_list_into_list(n: u64, va_list: VaList) -> Object {
+        let obj_array = unsafe { va_list_to_obj_array(n, va_list) };
+        let list = obj_array_to_list(n, obj_array, None);
+
+        Object::from_list(list)
+    }
+
+    #[runtime_fn]
+    pub unsafe extern "C" fn unlisp_rt_list_first(list: List) -> Object {
+        list.first()
+    }
+
+    #[runtime_fn]
+    pub unsafe extern "C" fn unlisp_rt_list_rest(list: List) -> List {
+        list.rest()
+    }
+
+    #[runtime_fn]
+    pub unsafe extern "C" fn unlisp_rt_list_cons(el: Object, list: List) -> List {
+        list.cons(el)
+    }
+
+    #[runtime_fn]
+    pub extern "C" fn unlisp_rt_empty_list() -> List {
+        let list = List {
+            node: ptr::null_mut(),
+            len: 0,
+        };
+
+        list
+    }
+
+    #[runtime_fn]
+    pub extern "C" fn unlisp_rt_init_runtime() {
+        symbols::init();
+        predefined::init();
+    }
+
+    #[runtime_fn]
+    pub unsafe extern "C" fn unlisp_rt_symbol_value(sym: *mut Symbol) -> Object {
+        let val = (*sym).value;
+
+        if val.is_null() {
+            let rsym_name = CStr::from_ptr((*sym).name).to_str().unwrap().to_string();
+            exceptions::raise_error(format!("unbound symbol: {}", rsym_name))
+        }
+
+        (*val).clone()
+    }
+
+    #[runtime_fn]
+    pub unsafe extern "C" fn unlisp_rt_symbol_function(sym: *mut Symbol) -> *mut Function {
+        let f = (*sym).function;
+
+        if f.is_null() {
+            let rsym_name = CStr::from_ptr((*sym).name).to_str().unwrap().to_string();
+            exceptions::raise_error(format!("undefined function: {}", rsym_name))
+        }
+
+        f
+    }
 }
+
+pub use runtime_fns::*;
