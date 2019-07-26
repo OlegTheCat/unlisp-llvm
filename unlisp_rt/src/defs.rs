@@ -6,8 +6,11 @@ use std::ffi::VaList;
 use std::fmt;
 use std::ptr;
 
+#[cfg(feature = "llvm_defs")]
 use inkwell::context::Context;
+#[cfg(feature = "llvm_defs")]
 use inkwell::module::Module;
+#[cfg(feature = "llvm_defs")]
 use inkwell::AddressSpace;
 
 use crate::{exceptions, predefined, symbols};
@@ -74,6 +77,8 @@ impl PartialEq for Object {
 }
 
 impl Object {
+
+    #[cfg(feature = "llvm_defs")]
     pub fn gen_llvm_def(context: &Context, _module: &Module) {
         let int8_ptr_ty = context.i8_type().ptr_type(AddressSpace::Generic);
         let int32_ty = context.i32_type();
@@ -254,6 +259,8 @@ impl PartialEq for List {
 }
 
 impl List {
+
+    #[cfg(feature = "llvm_defs")]
     pub fn gen_llvm_def(context: &Context, _module: &Module) {
         let i64_ty = context.i64_type();
         let i8_ptr_ty = context.i8_type().ptr_type(AddressSpace::Generic);
@@ -300,6 +307,8 @@ pub struct Symbol {
 }
 
 impl Symbol {
+
+    #[cfg(feature = "llvm_defs")]
     pub fn gen_llvm_def(context: &Context, module: &Module) {
         let func_struct_ty = module
             .get_type("unlisp_rt_function")
@@ -354,6 +363,7 @@ pub struct Function {
 impl Function {
     pub const FIELDS_COUNT: u32 = 8;
 
+    #[cfg(feature = "llvm_defs")]
     pub fn gen_llvm_def(context: &Context, _module: &Module) {
         let fn_struct_ty = context.opaque_struct_type("unlisp_rt_function");
 
@@ -385,6 +395,7 @@ impl Function {
     }
 }
 
+#[cfg(feature = "llvm_defs")]
 pub fn va_gen_llvm_def(ctx: &Context, module: &Module) {
     let i32_ty = ctx.i32_type();
     let i8_ptr_ty = ctx.i8_type().ptr_type(AddressSpace::Generic);

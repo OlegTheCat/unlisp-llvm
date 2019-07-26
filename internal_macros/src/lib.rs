@@ -289,7 +289,9 @@ pub fn gen_llvm_defs(
         mod #mod_ident {
             #(#content)*
 
+
             #[allow(unused_imports)]
+            #[cfg(feature = "llvm_defs")]
             pub mod #defs_mod_ident {
 
                 use inkwell::context::Context;
