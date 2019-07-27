@@ -5,17 +5,21 @@ use proc_macro2::*;
 use quote::{quote, quote_spanned};
 use syn;
 use syn::spanned::Spanned;
+use uuid::Uuid;
 
 fn ident(s: &str) -> Ident {
     Ident::new(s, Span::call_site())
 }
 
-// fn compile_error(span: Span, message: &str) -> TokenStream {
-//     syn::Error::new(span, message).to_compile_error()
-// }
-
 fn compile_error_spanned<T: quote::ToTokens>(tokens: T, message: &str) -> TokenStream {
     syn::Error::new_spanned(tokens, message).to_compile_error()
+}
+
+fn gensym(span: Span) -> Ident {
+    Ident::new(
+        &format!("__gensym_{}", Uuid::new_v4().to_simple()),
+        span
+    )
 }
 
 fn build_apply_body(
@@ -29,16 +33,18 @@ fn build_apply_body(
     let mut apply_body = TokenStream::new();
     let mut rest_to_intern = quote!(#args_list_ident);
 
-    for (i, _) in parsed_invoke.decl.inputs.iter().skip(1).enumerate() {
-        let arg_ident = ident(&format!("arg_{}", i));
+    for _ in parsed_invoke.decl.inputs.iter().skip(1) {
+        let arg_ident = gensym(Span::call_site());
+
+        let rest_ident = gensym(Span::call_site());
 
         apply_body = quote! {
             #(#apply_body)*
-            let __rest = #rest_to_intern;
-            let #arg_ident = __rest.first();
+            let #rest_ident = #rest_to_intern;
+            let #arg_ident = #rest_ident.first();
         };
 
-        rest_to_intern = quote!(__rest.rest());
+        rest_to_intern = quote!(#rest_ident.rest());
         invoke_args = quote!( #(#invoke_args)* #arg_ident ,);
     }
 
@@ -56,31 +62,38 @@ pub fn trivial_apply(
     item: proc_macro::TokenStream,
 ) -> proc_macro::TokenStream {
     let parsed_invoke = syn::parse_macro_input!(item as syn::ItemFn);
+    let invoke_ident = &parsed_invoke.ident;
 
-    if parsed_invoke.decl.variadic.is_some() {
-        panic!("cannot derive trivial apply for variadic functions");
+    if let Some(vararg) = parsed_invoke.decl.variadic {
+        return compile_error_spanned(vararg, "cannot derive trivial apply for variadic functions")
+            .into();
     }
 
     let abi = &parsed_invoke.abi;
 
     let apply_fn_name_str = format!(
         "{}_apply",
-        parsed_invoke.ident.to_string().replace("_invoke", "")
+        invoke_ident.to_string().replace("_invoke", "")
     );
     let apply_fn_name = Ident::new(&apply_fn_name_str, Span::call_site());
 
-    let f_arg_ident = ident("f");
-    let args_list_ident = ident("args");
-
+    let f_arg_ident = Ident::new("f", Span::call_site());
+    let args_list_ident = Ident::new("args", Span::call_site());
     let apply_body = build_apply_body(&f_arg_ident, &args_list_ident, &parsed_invoke);
+    let mod_ident = gensym(Span::call_site());
 
     let result = quote! {
         #parsed_invoke
 
-        unsafe #abi fn #apply_fn_name(#f_arg_ident: *const crate::defs::Function,
-                                      #args_list_ident: crate::defs::List) -> crate::defs::Object
-            #apply_body
+        mod #mod_ident {
+            use crate::defs::*;
+            use super::#invoke_ident;
 
+            pub unsafe #abi fn #apply_fn_name(#f_arg_ident: *const Function,
+                                              #args_list_ident: List) -> Object
+                #apply_body
+        }
+        use #mod_ident::#apply_fn_name;
     };
 
     result.into()
@@ -174,7 +187,7 @@ fn build_llvm_type_construction(
         syn::Type::Path(ty_path) => {
             let ty_name = match type_path_to_simple_name(ty_path) {
                 Ok(name) => name,
-                Err(message) => return llvm_def_generation_error(ty, message)
+                Err(message) => return llvm_def_generation_error(ty, message),
             };
 
             match ty_name.as_str() {
