@@ -296,7 +296,7 @@ fn main() {
                          .long("runtime-lib-path")
                          .value_name("FILE")
                          .takes_value(true)
-                         .help("Path to Unlisp runtime library to link (default: ./target/<debug/release>/libunlisp_rt.a)")));
+                         .help("Path to Unlisp runtime library to link (default: ./unlisp_rt_staticlib/target/<debug/release>/libunlisp_rt.a)")));
     let matches = app.get_matches();
 
     let stdlib_path;
@@ -331,9 +331,9 @@ fn main() {
         }
         Some("compile") => {
             #[cfg(debug_assertions)]
-            let default_rt_lib_path = "./target/debug/libunlisp_rt.a";
+            let default_rt_lib_path = "./unlisp_rt_staticlib/target/debug/libunlisp_rt.a";
             #[cfg(not(debug_assertions))]
-            let default_rt_lib_path = "./target/release/libunlisp_rt.a";
+            let default_rt_lib_path = "./unlisp_rt_staticlib/target/release/libunlisp_rt.a";
 
             let matches = matches.subcommand_matches("compile").unwrap();
 
