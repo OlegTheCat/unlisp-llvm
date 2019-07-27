@@ -19,7 +19,7 @@ For more info on how to run the compiler, refer to `cargo run -p unlisp -- --hel
 1. Install LLVM-7 and make it's binaries available on `PATH`:
    * Ubuntu: `sudo apt install llvm-7-dev`
    * OS X: `brew install llvm@7 && export PATH="/usr/local/opt/llvm@7/bin:$PATH"`
-1. `cargo build`
+1. `cargo build && cargo build --manifest-path ./unlisp_rt_staticlib/Cargo.toml`
 
 ## Features
 
@@ -167,11 +167,11 @@ runtime error: undefined function undefined-fn
 ## AOT compilation
 
 To compile a file into a binary, the function named `-main` needs to be defined, which designates an entrypoint.
-Also make sure to run `cargo build` command before AOT compilation to build the runtime library (needs to be only done once).
+Also make sure to run `cargo build --manifest-path ./unlisp_rt_staticlib/Cargo.toml` command before AOT compilation to build static runtime library (needs to be only done once).
 
 
 ```
-$ cargo build
+$ cargo build --manifest-path ./unlisp_rt_staticlib/Cargo.toml
     Finished dev [unoptimized + debuginfo] target(s) in 0.03s
 
 $ cat file.unl
@@ -182,7 +182,7 @@ $ cargo run -p unlisp -- compile -f file.unl -o binary
     Finished dev [unoptimized + debuginfo] target(s) in 0.03s
      Running `target/debug/compiler compile -f file.unl -o binary`
 Compiling file: file.unl...
-Linking with runtime library: ./target/debug/libunlisp_rt.a...
+Linking with runtime library: ./unlisp_rt_staticlib/target/debug/libunlisp_rt.a...
 
 $ ./binary
 89
