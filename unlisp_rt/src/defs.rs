@@ -14,7 +14,7 @@ use inkwell::module::Module;
 use inkwell::AddressSpace;
 
 use crate::{exceptions, predefined, symbols};
-use unlisp_internal_macros::{gen_llvm_defs, runtime_fn};
+use unlisp_internal_macros::{gen_llvm_defs, export_rt_fns};
 
 // TODO: revise usage of Copy here
 #[derive(Clone, Copy)]
@@ -417,47 +417,41 @@ pub fn va_gen_llvm_def(ctx: &Context, module: &Module) {
     module.add_function("llvm.va_end", va_start_end_ty, None);
 }
 
+
 #[gen_llvm_defs]
+#[export_rt_fns]
 mod runtime_fns {
 
     use super::*;
 
-    #[runtime_fn]
     pub extern "C" fn unlisp_rt_intern_sym(name: *const c_char) -> *mut Symbol {
         symbols::get_or_intern_symbol_by_ptr(name)
     }
 
-    #[runtime_fn]
     pub extern "C" fn unlisp_rt_object_from_int(i: i64) -> Object {
         Object::from_int(i)
     }
 
-    #[runtime_fn]
     pub extern "C" fn unlisp_rt_object_from_string(string: *const c_char) -> Object {
         Object::from_string(string)
     }
 
-    #[runtime_fn]
     pub extern "C" fn unlisp_rt_int_from_obj(o: Object) -> i64 {
         o.unpack_int()
     }
 
-    #[runtime_fn]
     pub extern "C" fn unlisp_rt_object_from_function(f: *mut Function) -> Object {
         Object::from_function(f)
     }
 
-    #[runtime_fn]
     pub extern "C" fn unlisp_rt_object_from_symbol(s: *mut Symbol) -> Object {
         Object::from_symbol(s)
     }
 
-    #[runtime_fn]
     pub extern "C" fn unlisp_rt_object_from_list(list: List) -> Object {
         Object::from_list(Box::into_raw(Box::new(list)))
     }
 
-    #[runtime_fn]
     pub extern "C" fn unlisp_rt_object_is_nil(o: Object) -> bool {
         o.ty == ObjType::List && {
             let list_ptr = o.unpack_list();
@@ -465,7 +459,6 @@ mod runtime_fns {
         }
     }
 
-    #[runtime_fn]
     pub extern "C" fn unlisp_rt_nil_object() -> Object {
         let list = List {
             node: ptr::null_mut(),
@@ -475,7 +468,6 @@ mod runtime_fns {
         Object::from_list(Box::into_raw(Box::new(list)))
     }
 
-    #[runtime_fn]
     pub extern "C" fn unlisp_rt_check_arity(f: *const Function, arg_count: u64) -> bool {
         let has_restarg = unsafe { (*f).has_restarg };
         let params_count = unsafe { (*f).arg_count };
@@ -510,7 +502,6 @@ mod runtime_fns {
         list
     }
 
-    #[runtime_fn]
     pub extern "C" fn unlisp_rt_va_list_into_list(n: u64, va_list: VaList) -> Object {
         let obj_array = unsafe { va_list_to_obj_array(n, va_list) };
         let list = obj_array_to_list(n, obj_array, None);
@@ -518,22 +509,19 @@ mod runtime_fns {
         Object::from_list(list)
     }
 
-    #[runtime_fn]
     pub unsafe extern "C" fn unlisp_rt_list_first(list: List) -> Object {
         list.first()
     }
 
-    #[runtime_fn]
     pub unsafe extern "C" fn unlisp_rt_list_rest(list: List) -> List {
         list.rest()
     }
 
-    #[runtime_fn]
+
     pub unsafe extern "C" fn unlisp_rt_list_cons(el: Object, list: List) -> List {
         list.cons(el)
     }
 
-    #[runtime_fn]
     pub extern "C" fn unlisp_rt_empty_list() -> List {
         let list = List {
             node: ptr::null_mut(),
@@ -543,13 +531,11 @@ mod runtime_fns {
         list
     }
 
-    #[runtime_fn]
     pub extern "C" fn unlisp_rt_init_runtime() {
         symbols::init();
         predefined::init();
     }
 
-    #[runtime_fn]
     pub unsafe extern "C" fn unlisp_rt_symbol_value(sym: *mut Symbol) -> Object {
         let val = (*sym).value;
 
@@ -561,7 +547,6 @@ mod runtime_fns {
         (*val).clone()
     }
 
-    #[runtime_fn]
     pub unsafe extern "C" fn unlisp_rt_symbol_function(sym: *mut Symbol) -> *mut Function {
         let f = (*sym).function;
 

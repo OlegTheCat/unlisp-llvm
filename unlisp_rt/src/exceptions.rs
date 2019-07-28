@@ -6,7 +6,7 @@ use std::ptr;
 use crate::defs::{Function, Object};
 use crate::error::RuntimeError;
 
-use unlisp_internal_macros::{runtime_fn, gen_llvm_defs};
+use unlisp_internal_macros::{gen_llvm_defs, export_rt_fns};
 
 const JMP_BUF_SIZE: usize = mem::size_of::<u32>() * 40;
 
@@ -100,10 +100,10 @@ pub unsafe fn raise_cast_error(from: String, to: String) -> ! {
 }
 
 #[gen_llvm_defs]
+#[export_rt_fns]
 mod runtime_fns {
     use super::*;
 
-    #[runtime_fn]
     pub unsafe extern "C" fn unlisp_rt_run_with_global_ex_handler(f: *mut Function) -> i32 {
         let invoke_fn: unsafe extern "C" fn(*const Function) -> Object =
             mem::transmute((*f).invoke_f_ptr);
@@ -117,7 +117,6 @@ mod runtime_fns {
         }
     }
 
-    #[runtime_fn]
     pub unsafe extern "C" fn unlisp_rt_raise_arity_error(
         name: *const c_char,
         _expected: u64,
@@ -137,7 +136,6 @@ mod runtime_fns {
         raise_error(msg);
     }
 
-    #[runtime_fn]
     pub unsafe extern "C" fn unlisp_rt_raise_undef_fn_error(name: *const c_char) -> ! {
         let name_str = CStr::from_ptr(name).to_str().unwrap();
 

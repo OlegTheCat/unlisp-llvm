@@ -2,24 +2,17 @@ extern crate proc_macro;
 extern crate proc_macro2;
 
 use proc_macro2::*;
-use quote::{quote, quote_spanned};
+use quote::{quote, quote_spanned, ToTokens};
 use syn;
 use syn::spanned::Spanned;
 use uuid::Uuid;
-
-fn ident(s: &str) -> Ident {
-    Ident::new(s, Span::call_site())
-}
 
 fn compile_error_spanned<T: quote::ToTokens>(tokens: T, message: &str) -> TokenStream {
     syn::Error::new_spanned(tokens, message).to_compile_error()
 }
 
 fn gensym(span: Span) -> Ident {
-    Ident::new(
-        &format!("__gensym_{}", Uuid::new_v4().to_simple()),
-        span
-    )
+    Ident::new(&format!("__gensym_{}", Uuid::new_v4().to_simple()), span)
 }
 
 fn build_apply_body(
@@ -71,10 +64,7 @@ pub fn trivial_apply(
 
     let abi = &parsed_invoke.abi;
 
-    let apply_fn_name_str = format!(
-        "{}_apply",
-        invoke_ident.to_string().replace("_invoke", "")
-    );
+    let apply_fn_name_str = format!("{}_apply", invoke_ident.to_string().replace("_invoke", ""));
     let apply_fn_name = Ident::new(&apply_fn_name_str, Span::call_site());
 
     let f_arg_ident = Ident::new("f", Span::call_site());
@@ -99,40 +89,6 @@ pub fn trivial_apply(
     result.into()
 }
 
-#[proc_macro_attribute]
-pub fn runtime_fn(
-    _attr: proc_macro::TokenStream,
-    item: proc_macro::TokenStream,
-) -> proc_macro::TokenStream {
-    let parsed_fn = syn::parse_macro_input!(item as syn::ItemFn);
-    let fn_ident = &parsed_fn.ident;
-    let args = &parsed_fn.decl.inputs;
-    let ret_ty = &parsed_fn.decl.output;
-    let abi = &parsed_fn.abi;
-    let unsafety = &parsed_fn.unsafety;
-
-    if parsed_fn.decl.variadic.is_some() {
-        panic!("runtime fn cannot be variadic");
-    }
-
-    if !parsed_fn.decl.generics.params.is_empty() {
-        panic!("runtime fn cannot be generic");
-    }
-
-    let used_ident = ident(&format!("___USED_{}", fn_ident.to_string().to_uppercase()));
-
-    let result = quote! {
-        #[inline(never)]
-        #[no_mangle]
-        #parsed_fn
-
-        #[used]
-        static #used_ident: #unsafety #abi fn(#args) #ret_ty  = #fn_ident;
-    };
-
-    result.into()
-}
-
 fn extract_item_fn(item: &syn::Item) -> Option<&syn::ItemFn> {
     match item {
         syn::Item::Fn(item_fn) => Some(item_fn),
@@ -142,6 +98,13 @@ fn extract_item_fn(item: &syn::Item) -> Option<&syn::ItemFn> {
 
 fn is_unlisp_rt_fn(fn_item: &syn::ItemFn) -> bool {
     fn_item.ident.to_string().starts_with("unlisp_rt")
+}
+
+fn extract_rt_fn(item: &syn::Item) -> Option<&syn::ItemFn> {
+    extract_item_fn(item)
+        .into_iter()
+        .filter(|f| is_unlisp_rt_fn(*f))
+        .next()
 }
 
 fn llvm_def_generation_error<T: quote::ToTokens>(tokens: T, message: &str) -> TokenStream {
@@ -271,6 +234,12 @@ fn build_llvm_def_generator_for_fn(fn_item: &syn::ItemFn) -> (Ident, TokenStream
     (generator_fn_ident, generator_fn)
 }
 
+fn extract_mod_content<'a>(
+    mod_item: &'a syn::ItemMod,
+) -> Option<impl Iterator<Item = &'a syn::Item> + Clone> {
+    mod_item.content.as_ref().map(|(_, items)| items.iter())
+}
+
 #[proc_macro_attribute]
 pub fn gen_llvm_defs(
     _attr: proc_macro::TokenStream,
@@ -278,19 +247,14 @@ pub fn gen_llvm_defs(
 ) -> proc_macro::TokenStream {
     let parsed_mod = syn::parse_macro_input!(item as syn::ItemMod);
     let mod_ident = &parsed_mod.ident;
-    let content = parsed_mod.content.as_ref().map(|(_, items)| items);
 
-    if content.is_none() {
-        return llvm_def_generation_error(mod_ident, "cannot gen llvm defs for bodyless module")
-            .into();
-    }
-
-    let content = content.unwrap();
-
-    let rt_fns = content
-        .iter()
-        .filter_map(extract_item_fn)
-        .filter(|f| is_unlisp_rt_fn(*f));
+    let rt_fns = match extract_mod_content(&parsed_mod) {
+        Some(iter) => iter.filter_map(extract_rt_fn),
+        None => {
+            return llvm_def_generation_error(mod_ident, "cannot gen llvm defs for bodyless module")
+                .into()
+        }
+    };
 
     let generator_idents_and_fns = rt_fns.map(build_llvm_def_generator_for_fn);
     let generator_idents = generator_idents_and_fns.clone().map(|x| x.0);
@@ -299,24 +263,86 @@ pub fn gen_llvm_defs(
     let defs_mod_ident = Ident::new("rt_fns_llvm_defs", mod_ident.span());
 
     let result = quote_spanned! {mod_ident.span() =>
-        mod #mod_ident {
-            #(#content)*
+        #parsed_mod
 
+        #[allow(unused_imports)]
+        #[cfg(feature = "llvm_defs")]
+        pub mod #defs_mod_ident {
 
-            #[allow(unused_imports)]
-            #[cfg(feature = "llvm_defs")]
-            pub mod #defs_mod_ident {
+            use inkwell::context::Context;
+            use inkwell::module::Module;
+            use inkwell::AddressSpace;
 
-                use inkwell::context::Context;
-                use inkwell::module::Module;
-                use inkwell::AddressSpace;
+            #(#generator_fns)*
 
-                #(#generator_fns)*
-
-                pub fn gen_defs(ctx: &Context, module: &Module) {
-                    #(#generator_idents(ctx, module);)*
-                }
+            pub fn gen_defs(ctx: &Context, module: &Module) {
+                #(#generator_idents(ctx, module);)*
             }
+        }
+    };
+
+    result.into()
+}
+
+fn mark_fn_for_export(fn_item: &syn::ItemFn) -> TokenStream {
+    let fn_ident = &fn_item.ident;
+    let args = &fn_item.decl.inputs;
+    let ret_ty = &fn_item.decl.output;
+    let abi = &fn_item.abi;
+    let unsafety = &fn_item.unsafety;
+
+    if let Some(vararg) = fn_item.decl.variadic {
+        return compile_error_spanned(vararg, "runtime fn cannot be variadic");
+    }
+
+    if !fn_item.decl.generics.params.is_empty() {
+        return compile_error_spanned(
+            &fn_item.decl.generics.params,
+            "runtime fn cannot be generic",
+        );
+    }
+
+    let used_ident = Ident::new(
+        &format!("___USED_{}", fn_ident.to_string().to_uppercase()),
+        fn_ident.span(),
+    );
+
+    let result = quote_spanned! {fn_ident.span()=>
+        #[inline(never)]
+        #[no_mangle]
+        #fn_item
+
+        #[used]
+        static #used_ident: #unsafety #abi fn(#args) #ret_ty  = #fn_ident;
+    };
+
+    result
+}
+
+#[proc_macro_attribute]
+pub fn export_rt_fns(
+    _attr: proc_macro::TokenStream,
+    item: proc_macro::TokenStream,
+) -> proc_macro::TokenStream {
+    let parsed_mod = syn::parse_macro_input!(item as syn::ItemMod);
+    let mod_ident = &parsed_mod.ident;
+    let attrs = &parsed_mod.attrs;
+    let content = match extract_mod_content(&parsed_mod) {
+        Some(iter) => iter,
+        None => {
+            return compile_error_spanned(mod_ident, "cannot save runtime fns in bodyless module")
+                .into()
+        }
+    };
+
+    let exported = content.map(|item| match extract_rt_fn(item) {
+        Some(rt_fn) => mark_fn_for_export(rt_fn),
+        None => item.clone().into_token_stream(),
+    });
+
+    let result = quote_spanned! {parsed_mod.span()=>
+        #(#attrs)* mod #mod_ident {
+            #(#exported)*
         }
     };
 
