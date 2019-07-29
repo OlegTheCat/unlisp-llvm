@@ -2,7 +2,7 @@ extern crate proc_macro;
 extern crate proc_macro2;
 
 use proc_macro2::*;
-use quote::{quote, quote_spanned, ToTokens};
+use quote::{quote, quote_spanned};
 use syn;
 use syn::spanned::Spanned;
 use uuid::Uuid;
@@ -87,24 +87,6 @@ pub fn trivial_apply(
     };
 
     result.into()
-}
-
-fn extract_item_fn(item: &syn::Item) -> Option<&syn::ItemFn> {
-    match item {
-        syn::Item::Fn(item_fn) => Some(item_fn),
-        _ => None,
-    }
-}
-
-fn is_unlisp_rt_fn(fn_item: &syn::ItemFn) -> bool {
-    fn_item.ident.to_string().starts_with("unlisp_rt")
-}
-
-fn extract_rt_fn(item: &syn::Item) -> Option<&syn::ItemFn> {
-    extract_item_fn(item)
-        .into_iter()
-        .filter(|f| is_unlisp_rt_fn(*f))
-        .next()
 }
 
 fn llvm_def_generation_error<T: quote::ToTokens>(tokens: T, message: &str) -> TokenStream {
@@ -234,57 +216,7 @@ fn build_llvm_def_generator_for_fn(fn_item: &syn::ItemFn) -> (Ident, TokenStream
     (generator_fn_ident, generator_fn)
 }
 
-fn extract_mod_content<'a>(
-    mod_item: &'a syn::ItemMod,
-) -> Option<impl Iterator<Item = &'a syn::Item> + Clone> {
-    mod_item.content.as_ref().map(|(_, items)| items.iter())
-}
-
-#[proc_macro_attribute]
-pub fn gen_llvm_defs(
-    _attr: proc_macro::TokenStream,
-    item: proc_macro::TokenStream,
-) -> proc_macro::TokenStream {
-    let parsed_mod = syn::parse_macro_input!(item as syn::ItemMod);
-    let mod_ident = &parsed_mod.ident;
-
-    let rt_fns = match extract_mod_content(&parsed_mod) {
-        Some(iter) => iter.filter_map(extract_rt_fn),
-        None => {
-            return llvm_def_generation_error(mod_ident, "cannot gen llvm defs for bodyless module")
-                .into()
-        }
-    };
-
-    let generator_idents_and_fns = rt_fns.map(build_llvm_def_generator_for_fn);
-    let generator_idents = generator_idents_and_fns.clone().map(|x| x.0);
-    let generator_fns = generator_idents_and_fns.map(|x| x.1);
-
-    let defs_mod_ident = Ident::new("rt_fns_llvm_defs", mod_ident.span());
-
-    let result = quote_spanned! {mod_ident.span() =>
-        #parsed_mod
-
-        #[allow(unused_imports)]
-        #[cfg(feature = "llvm_defs")]
-        pub mod #defs_mod_ident {
-
-            use inkwell::context::Context;
-            use inkwell::module::Module;
-            use inkwell::AddressSpace;
-
-            #(#generator_fns)*
-
-            pub fn gen_defs(ctx: &Context, module: &Module) {
-                #(#generator_idents(ctx, module);)*
-            }
-        }
-    };
-
-    result.into()
-}
-
-fn mark_fn_for_export(fn_item: &syn::ItemFn) -> TokenStream {
+fn add_attrs_and_gen_used_def(fn_item: &syn::ItemFn) -> TokenStream {
     let fn_ident = &fn_item.ident;
     let args = &fn_item.decl.inputs;
     let ret_ty = &fn_item.decl.output;
@@ -320,30 +252,32 @@ fn mark_fn_for_export(fn_item: &syn::ItemFn) -> TokenStream {
 }
 
 #[proc_macro_attribute]
-pub fn export_rt_fns(
+pub fn runtime_fn(
     _attr: proc_macro::TokenStream,
     item: proc_macro::TokenStream,
 ) -> proc_macro::TokenStream {
-    let parsed_mod = syn::parse_macro_input!(item as syn::ItemMod);
-    let mod_ident = &parsed_mod.ident;
-    let attrs = &parsed_mod.attrs;
-    let content = match extract_mod_content(&parsed_mod) {
-        Some(iter) => iter,
-        None => {
-            return compile_error_spanned(mod_ident, "cannot save runtime fns in bodyless module")
-                .into()
-        }
-    };
+    let parsed_fn = syn::parse_macro_input!(item as syn::ItemFn);
+    let fn_ident = &parsed_fn.ident;
 
-    let exported = content.map(|item| match extract_rt_fn(item) {
-        Some(rt_fn) => mark_fn_for_export(rt_fn),
-        None => item.clone().into_token_stream(),
-    });
+    let fn_with_attrs_and_used = add_attrs_and_gen_used_def(&parsed_fn);
+    let (gen_fn_ident, llvm_gen_fn) = build_llvm_def_generator_for_fn(&parsed_fn);
 
-    let result = quote_spanned! {parsed_mod.span()=>
-        #(#attrs)* mod #mod_ident {
-            #(#exported)*
+    let llvm_gen_fn_mod_ident = gensym(fn_ident.span());
+
+    let result = quote! {
+        #fn_with_attrs_and_used
+
+        #[cfg(feature = "llvm_defs")]
+        mod #llvm_gen_fn_mod_ident {
+            use inkwell::context::Context;
+            use inkwell::module::Module;
+            use inkwell::AddressSpace;
+
+            #llvm_gen_fn
         }
+
+        #[cfg(feature = "llvm_defs")]
+        pub use #llvm_gen_fn_mod_ident::#gen_fn_ident;
     };
 
     result.into()

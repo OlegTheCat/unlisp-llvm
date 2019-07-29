@@ -6,7 +6,7 @@ use std::ptr;
 use crate::defs::{Function, Object};
 use crate::error::RuntimeError;
 
-use unlisp_internal_macros::{gen_llvm_defs, export_rt_fns};
+use unlisp_internal_macros::runtime_fn;
 
 const JMP_BUF_SIZE: usize = mem::size_of::<u32>() * 40;
 
@@ -99,50 +99,45 @@ pub unsafe fn raise_cast_error(from: String, to: String) -> ! {
     raise_error(msg)
 }
 
-#[gen_llvm_defs]
-#[export_rt_fns]
-mod runtime_fns {
-    use super::*;
+#[runtime_fn]
+pub unsafe extern "C" fn unlisp_rt_run_with_global_ex_handler(f: *mut Function) -> i32 {
+    let invoke_fn: unsafe extern "C" fn(*const Function) -> Object =
+        mem::transmute((*f).invoke_f_ptr);
 
-    pub unsafe extern "C" fn unlisp_rt_run_with_global_ex_handler(f: *mut Function) -> i32 {
-        let invoke_fn: unsafe extern "C" fn(*const Function) -> Object =
-            mem::transmute((*f).invoke_f_ptr);
-
-        match run_with_global_ex_handler(|| invoke_fn(f)) {
-            Ok(_) => 0,
-            Err(e) => {
-                eprintln!("runtime error: {}", e);
-                1
-            }
+    match run_with_global_ex_handler(|| invoke_fn(f)) {
+        Ok(_) => 0,
+        Err(e) => {
+            eprintln!("runtime error: {}", e);
+            1
         }
-    }
-
-    pub unsafe extern "C" fn unlisp_rt_raise_arity_error(
-        name: *const c_char,
-        _expected: u64,
-        actual: u64,
-    ) -> ! {
-        let name_str = if name != ptr::null() {
-            CStr::from_ptr(name).to_str().unwrap()
-        } else {
-            "lambda"
-        };
-
-        let msg = format!(
-            "wrong number of arguments ({}) passed to {}",
-            actual, name_str
-        );
-
-        raise_error(msg);
-    }
-
-    pub unsafe extern "C" fn unlisp_rt_raise_undef_fn_error(name: *const c_char) -> ! {
-        let name_str = CStr::from_ptr(name).to_str().unwrap();
-
-        let msg = format!("undefined function {}", name_str);
-
-        raise_error(msg);
     }
 }
 
-pub use runtime_fns::*;
+#[runtime_fn]
+pub unsafe extern "C" fn unlisp_rt_raise_arity_error(
+    name: *const c_char,
+    _expected: u64,
+    actual: u64,
+) -> ! {
+    let name_str = if name != ptr::null() {
+        CStr::from_ptr(name).to_str().unwrap()
+    } else {
+        "lambda"
+    };
+
+    let msg = format!(
+        "wrong number of arguments ({}) passed to {}",
+        actual, name_str
+    );
+
+    raise_error(msg);
+}
+
+#[runtime_fn]
+pub unsafe extern "C" fn unlisp_rt_raise_undef_fn_error(name: *const c_char) -> ! {
+    let name_str = CStr::from_ptr(name).to_str().unwrap();
+
+    let msg = format!("undefined function {}", name_str);
+
+    raise_error(msg);
+}

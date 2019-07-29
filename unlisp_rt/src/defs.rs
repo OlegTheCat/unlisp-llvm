@@ -14,7 +14,7 @@ use inkwell::module::Module;
 use inkwell::AddressSpace;
 
 use crate::{exceptions, predefined, symbols};
-use unlisp_internal_macros::{gen_llvm_defs, export_rt_fns};
+use unlisp_internal_macros::runtime_fn;
 
 // TODO: revise usage of Copy here
 #[derive(Clone, Copy)]
@@ -417,146 +417,154 @@ pub fn va_gen_llvm_def(ctx: &Context, module: &Module) {
     module.add_function("llvm.va_end", va_start_end_ty, None);
 }
 
+#[runtime_fn]
+pub extern "C" fn unlisp_rt_intern_sym(name: *const c_char) -> *mut Symbol {
+    symbols::get_or_intern_symbol_by_ptr(name)
+}
 
-#[gen_llvm_defs]
-#[export_rt_fns]
-mod runtime_fns {
+#[runtime_fn]
+pub extern "C" fn unlisp_rt_object_from_int(i: i64) -> Object {
+    Object::from_int(i)
+}
 
-    use super::*;
+#[runtime_fn]
+pub extern "C" fn unlisp_rt_object_from_string(string: *const c_char) -> Object {
+    Object::from_string(string)
+}
 
-    pub extern "C" fn unlisp_rt_intern_sym(name: *const c_char) -> *mut Symbol {
-        symbols::get_or_intern_symbol_by_ptr(name)
-    }
+#[runtime_fn]
+pub extern "C" fn unlisp_rt_int_from_obj(o: Object) -> i64 {
+    o.unpack_int()
+}
 
-    pub extern "C" fn unlisp_rt_object_from_int(i: i64) -> Object {
-        Object::from_int(i)
-    }
+#[runtime_fn]
+pub extern "C" fn unlisp_rt_object_from_function(f: *mut Function) -> Object {
+    Object::from_function(f)
+}
 
-    pub extern "C" fn unlisp_rt_object_from_string(string: *const c_char) -> Object {
-        Object::from_string(string)
-    }
+#[runtime_fn]
+pub extern "C" fn unlisp_rt_object_from_symbol(s: *mut Symbol) -> Object {
+    Object::from_symbol(s)
+}
 
-    pub extern "C" fn unlisp_rt_int_from_obj(o: Object) -> i64 {
-        o.unpack_int()
-    }
+#[runtime_fn]
+pub extern "C" fn unlisp_rt_object_from_list(list: List) -> Object {
+    Object::from_list(Box::into_raw(Box::new(list)))
+}
 
-    pub extern "C" fn unlisp_rt_object_from_function(f: *mut Function) -> Object {
-        Object::from_function(f)
-    }
-
-    pub extern "C" fn unlisp_rt_object_from_symbol(s: *mut Symbol) -> Object {
-        Object::from_symbol(s)
-    }
-
-    pub extern "C" fn unlisp_rt_object_from_list(list: List) -> Object {
-        Object::from_list(Box::into_raw(Box::new(list)))
-    }
-
-    pub extern "C" fn unlisp_rt_object_is_nil(o: Object) -> bool {
-        o.ty == ObjType::List && {
-            let list_ptr = o.unpack_list();
-            unsafe { (*list_ptr).len == 0 }
-        }
-    }
-
-    pub extern "C" fn unlisp_rt_nil_object() -> Object {
-        let list = List {
-            node: ptr::null_mut(),
-            len: 0,
-        };
-
-        Object::from_list(Box::into_raw(Box::new(list)))
-    }
-
-    pub extern "C" fn unlisp_rt_check_arity(f: *const Function, arg_count: u64) -> bool {
-        let has_restarg = unsafe { (*f).has_restarg };
-        let params_count = unsafe { (*f).arg_count };
-
-        let is_incorrect = (arg_count < params_count) || (!has_restarg && params_count != arg_count);
-
-        !is_incorrect
-    }
-
-    extern "C" {
-        pub fn va_list_to_obj_array(n: u64, list: VaList) -> *mut Object;
-    }
-
-    pub fn obj_array_to_list(n: u64, arr: *mut Object, list: Option<*mut List>) -> *mut List {
-        let mut list = list.unwrap_or_else(|| {
-            Box::into_raw(Box::new(List {
-                node: ptr::null_mut(),
-                len: 0,
-            }))
-        });
-
-        for i in (0..n).rev() {
-            list = Box::into_raw(Box::new(List {
-                len: unsafe { (*list).len } + 1,
-                node: Box::into_raw(Box::new(Node {
-                    val: unsafe { arr.offset(i as isize) },
-                    next: list,
-                })),
-            }))
-        }
-
-        list
-    }
-
-    pub extern "C" fn unlisp_rt_va_list_into_list(n: u64, va_list: VaList) -> Object {
-        let obj_array = unsafe { va_list_to_obj_array(n, va_list) };
-        let list = obj_array_to_list(n, obj_array, None);
-
-        Object::from_list(list)
-    }
-
-    pub unsafe extern "C" fn unlisp_rt_list_first(list: List) -> Object {
-        list.first()
-    }
-
-    pub unsafe extern "C" fn unlisp_rt_list_rest(list: List) -> List {
-        list.rest()
-    }
-
-
-    pub unsafe extern "C" fn unlisp_rt_list_cons(el: Object, list: List) -> List {
-        list.cons(el)
-    }
-
-    pub extern "C" fn unlisp_rt_empty_list() -> List {
-        let list = List {
-            node: ptr::null_mut(),
-            len: 0,
-        };
-
-        list
-    }
-
-    pub extern "C" fn unlisp_rt_init_runtime() {
-        symbols::init();
-        predefined::init();
-    }
-
-    pub unsafe extern "C" fn unlisp_rt_symbol_value(sym: *mut Symbol) -> Object {
-        let val = (*sym).value;
-
-        if val.is_null() {
-            let rsym_name = CStr::from_ptr((*sym).name).to_str().unwrap().to_string();
-            exceptions::raise_error(format!("unbound symbol: {}", rsym_name))
-        }
-
-        (*val).clone()
-    }
-
-    pub unsafe extern "C" fn unlisp_rt_symbol_function(sym: *mut Symbol) -> *mut Function {
-        let f = (*sym).function;
-
-        if f.is_null() {
-            let rsym_name = CStr::from_ptr((*sym).name).to_str().unwrap().to_string();
-            exceptions::raise_error(format!("undefined function: {}", rsym_name))
-        }
-
-        f
+#[runtime_fn]
+pub extern "C" fn unlisp_rt_object_is_nil(o: Object) -> bool {
+    o.ty == ObjType::List && {
+        let list_ptr = o.unpack_list();
+        unsafe { (*list_ptr).len == 0 }
     }
 }
 
-pub use runtime_fns::*;
+#[runtime_fn]
+pub extern "C" fn unlisp_rt_nil_object() -> Object {
+    let list = List {
+        node: ptr::null_mut(),
+        len: 0,
+    };
+
+    Object::from_list(Box::into_raw(Box::new(list)))
+}
+
+#[runtime_fn]
+pub extern "C" fn unlisp_rt_check_arity(f: *const Function, arg_count: u64) -> bool {
+    let has_restarg = unsafe { (*f).has_restarg };
+    let params_count = unsafe { (*f).arg_count };
+
+    let is_incorrect = (arg_count < params_count) || (!has_restarg && params_count != arg_count);
+
+    !is_incorrect
+}
+
+extern "C" {
+    pub fn va_list_to_obj_array(n: u64, list: VaList) -> *mut Object;
+}
+
+pub fn obj_array_to_list(n: u64, arr: *mut Object, list: Option<*mut List>) -> *mut List {
+    let mut list = list.unwrap_or_else(|| {
+        Box::into_raw(Box::new(List {
+            node: ptr::null_mut(),
+            len: 0,
+        }))
+    });
+
+    for i in (0..n).rev() {
+        list = Box::into_raw(Box::new(List {
+            len: unsafe { (*list).len } + 1,
+            node: Box::into_raw(Box::new(Node {
+                val: unsafe { arr.offset(i as isize) },
+                next: list,
+            })),
+        }))
+    }
+
+    list
+}
+
+#[runtime_fn]
+pub extern "C" fn unlisp_rt_va_list_into_list(n: u64, va_list: VaList) -> Object {
+    let obj_array = unsafe { va_list_to_obj_array(n, va_list) };
+    let list = obj_array_to_list(n, obj_array, None);
+
+    Object::from_list(list)
+}
+
+#[runtime_fn]
+pub unsafe extern "C" fn unlisp_rt_list_first(list: List) -> Object {
+    list.first()
+}
+
+#[runtime_fn]
+pub unsafe extern "C" fn unlisp_rt_list_rest(list: List) -> List {
+    list.rest()
+}
+
+
+#[runtime_fn]
+pub unsafe extern "C" fn unlisp_rt_list_cons(el: Object, list: List) -> List {
+    list.cons(el)
+}
+
+#[runtime_fn]
+pub extern "C" fn unlisp_rt_empty_list() -> List {
+    let list = List {
+        node: ptr::null_mut(),
+        len: 0,
+    };
+
+    list
+}
+
+#[runtime_fn]
+pub extern "C" fn unlisp_rt_init_runtime() {
+    symbols::init();
+    predefined::init();
+}
+
+#[runtime_fn]
+pub unsafe extern "C" fn unlisp_rt_symbol_value(sym: *mut Symbol) -> Object {
+    let val = (*sym).value;
+
+    if val.is_null() {
+        let rsym_name = CStr::from_ptr((*sym).name).to_str().unwrap().to_string();
+        exceptions::raise_error(format!("unbound symbol: {}", rsym_name))
+    }
+
+    (*val).clone()
+}
+
+#[runtime_fn]
+pub unsafe extern "C" fn unlisp_rt_symbol_function(sym: *mut Symbol) -> *mut Function {
+    let f = (*sym).function;
+
+    if f.is_null() {
+        let rsym_name = CStr::from_ptr((*sym).name).to_str().unwrap().to_string();
+        exceptions::raise_error(format!("undefined function: {}", rsym_name))
+    }
+
+    f
+}
