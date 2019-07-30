@@ -8,7 +8,6 @@ use std::path::Path;
 use std::process::Command;
 
 use unlispc::codegen::context::CodegenContext;
-use unlispc::error;
 use unlispc::reader;
 use unlispc::repr;
 
@@ -36,9 +35,9 @@ pub fn eval_and_expand_file(
 
     let report_err = |msg| {
         if panic_on_err {
-            panic!(msg);
+            panic!("[{}] {}", path, msg);
         } else {
-            eprintln!("{}", msg);
+            eprintln!("[{}] {}", path, msg);
         }
     };
 
@@ -47,36 +46,12 @@ pub fn eval_and_expand_file(
     let mut reader = reader::Reader::create(&mut file);
     loop {
         match read_and_parse(&mut reader) {
-            Ok(Some(hir)) => unsafe {
-                match ctx.compile_hirs(&[hir.clone()]) {
-                    Ok(compiled_fn) => {
-                        match unlisp_rt::exceptions::run_with_global_ex_handler(|| {
-                            compiled_fn.call()
-                        }) {
-                            Err(err) => {
-                                report_err(format!("[{}] runtime error: {}", path, err));
-                                Err(err)?
-                            }
-                            Ok(_) => expanded.push(hir),
-                        }
-                    }
-                    Err(err) => {
-                        report_err(format!("[{}] compilation error: {}", path, err));
-                        Err(err)?
-                    }
-                }
+            Ok(Some(hir)) => match unsafe { ctx.eval_hirs(&[hir.clone()]) } {
+                Ok(_) => expanded.push(hir),
+                Err(e) => report_err(e.to_string()),
             },
             Ok(None) => break,
-            Err(e) => {
-                match e.downcast_ref::<error::Error>() {
-                    Some(e) if e.ty == error::ErrorType::Syntax => {
-                        report_err(format!("[{}] reader error: {}", path, e))
-                    }
-                    _ => report_err(format!("[{}] macroexpansion error: {}", path, e)),
-                }
-
-                Err(e)?
-            }
+            Err(e) => report_err(e.to_string()),
         }
         ctx.reinitialize();
     }
@@ -117,19 +92,14 @@ fn repl(ctx: &mut CodegenContext, dump_compiled: bool) {
                             compiled_fn.call()
                         }) {
                             Ok(obj) => println!("{}", obj),
-                            Err(err) => eprintln!("runtime error: {}", err),
+                            Err(err) => eprintln!("{}", err),
                         }
                     }
-                    Err(err) => {
-                        eprintln!("compilation error: {}", err);
-                    }
+                    Err(err) => eprintln!("{}", err),
                 }
             },
             Ok(None) => break,
-            Err(e) => match e.downcast_ref::<error::Error>() {
-                Some(e) if e.ty == error::ErrorType::Syntax => eprintln!("reader error: {}", e),
-                _ => eprintln!("macroexpansion error: {}", e),
-            },
+            Err(e) => eprintln!("{}", e),
         }
         ctx.reinitialize();
         prompt();

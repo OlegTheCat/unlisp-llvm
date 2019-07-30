@@ -1,4 +1,3 @@
-use std::error;
 use std::fmt;
 
 #[derive(Debug, Clone)]
@@ -15,5 +14,3 @@ impl fmt::Display for RuntimeError {
         write!(f, "{}", self.0)
     }
 }
-
-impl error::Error for RuntimeError {}

@@ -2,7 +2,6 @@ use crate::error;
 use crate::repr::HIR;
 use crate::runtime_defs;
 
-use super::common::*;
 use super::top_level::compile_top_level_hirs;
 
 use inkwell::basic_block::BasicBlock;
@@ -280,22 +279,24 @@ impl<'a> CodegenContext<'a> {
         }
     }
 
-    pub fn codegen_hirs(&mut self, hirs: &[HIR]) -> GenResult<String> {
+    pub fn codegen_hirs(&mut self, hirs: &[HIR]) -> Result<String, error::Error> {
         compile_top_level_hirs(self, hirs)
     }
 
-    pub fn compile_hirs_with_main(&mut self, hirs: &[HIR]) -> GenResult<()> {
+    pub fn compile_hirs_with_main(&mut self, hirs: &[HIR]) -> Result<(), error::Error> {
         let code_init_fn_name = self.codegen_hirs(hirs)?;
 
         let sym = unlisp_rt::symbols::get_or_intern_symbol("-main".to_string());
 
         unsafe {
             if (*sym).function.is_null() {
-                Err(error::Error::new_compilation_error(
+                Err(error::Error::new(
+                    error::ErrorType::Compilation,
                     "-main function is not defined",
                 ))?;
             } else if (*(*sym).function).arg_count != 0 || (*(*sym).function).has_restarg {
-                Err(error::Error::new_compilation_error(
+                Err(error::Error::new(
+                    error::ErrorType::Compilation,
                     "-main function should have zero arity",
                 ))?;
             }
@@ -339,12 +340,24 @@ impl<'a> CodegenContext<'a> {
         Ok(())
     }
 
-    pub unsafe fn compile_hirs(&mut self, hirs: &[HIR]) -> GenResult<CompiledFn> {
+    pub fn compile_hirs(&mut self, hirs: &[HIR]) -> Result<CompiledFn, error::Error> {
         let top_level_fn_name = self.codegen_hirs(hirs)?;
 
-        Ok(self
-            .execution_engine
-            .get_function(top_level_fn_name.as_str())
-            .expect("couldn't find top-level function in execution engine"))
+        unsafe {
+            Ok(self
+                .execution_engine
+                .get_function(top_level_fn_name.as_str())
+                .expect("couldn't find top-level function in execution engine"))
+        }
+    }
+
+    pub unsafe fn eval_hirs(
+        &mut self,
+        hirs: &[HIR],
+    ) -> Result<unlisp_rt::defs::Object, error::Error> {
+        let compiled_fn = self.compile_hirs(hirs)?;
+
+        unlisp_rt::exceptions::run_with_global_ex_handler(|| compiled_fn.call())
+            .map_err(error::Error::rt_error)
     }
 }

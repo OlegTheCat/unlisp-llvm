@@ -77,7 +77,6 @@ impl PartialEq for Object {
 }
 
 impl Object {
-
     #[cfg(feature = "llvm_defs")]
     pub fn gen_llvm_def(context: &Context, _module: &Module) {
         let int8_ptr_ty = context.i8_type().ptr_type(AddressSpace::Generic);
@@ -259,7 +258,6 @@ impl PartialEq for List {
 }
 
 impl List {
-
     #[cfg(feature = "llvm_defs")]
     pub fn gen_llvm_def(context: &Context, _module: &Module) {
         let i64_ty = context.i64_type();
@@ -307,7 +305,6 @@ pub struct Symbol {
 }
 
 impl Symbol {
-
     #[cfg(feature = "llvm_defs")]
     pub fn gen_llvm_def(context: &Context, module: &Module) {
         let func_struct_ty = module
@@ -326,10 +323,10 @@ impl Symbol {
 
         let struct_ty = context.opaque_struct_type("unlisp_rt_symbol");
 
-        struct_ty.set_body(&[name_ptr_ty.into(),
-                             func_ptr_ty.into(),
-                             value_ptr_ty.into()],
-                           false);
+        struct_ty.set_body(
+            &[name_ptr_ty.into(), func_ptr_ty.into(), value_ptr_ty.into()],
+            false,
+        );
     }
 
     pub fn new(name: *const c_char) -> Self {
@@ -522,7 +519,6 @@ pub unsafe extern "C" fn unlisp_rt_list_first(list: List) -> Object {
 pub unsafe extern "C" fn unlisp_rt_list_rest(list: List) -> List {
     list.rest()
 }
-
 
 #[runtime_fn]
 pub unsafe extern "C" fn unlisp_rt_list_cons(el: Object, list: List) -> List {

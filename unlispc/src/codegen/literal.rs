@@ -44,11 +44,15 @@ pub fn compile_literal(ctx: &mut CodegenContext, literal: &Literal) -> CompileRe
         Literal::StringLiteral(s) => Ok(compile_string_literal(ctx, s)),
         Literal::SymbolLiteral(s) => {
             let val = ctx.lookup_name_or_gen_global_access(s).ok_or_else(|| {
-                error::Error::new_compilation_error(format!("undefined symbol: {}", s.as_str()))
+                error::Error::new(
+                    error::ErrorType::Compilation,
+                    format!("undefined symbol: {}", s.as_str()),
+                )
             })?;
             Ok(val)
         }
-        Literal::T => Err(error::Error::new_unsupported_error(
+        Literal::T => Err(error::Error::new(
+            error::ErrorType::Compilation,
             "t literal is not yet supported",
         ))?,
     }

@@ -1,4 +1,4 @@
-use crate::error::Error;
+use crate::error::{Error, ErrorType};
 use crate::repr::Closure;
 use unlisp_rt::defs::Function;
 
@@ -16,7 +16,7 @@ fn is_global_name(ctx: &CodegenContext, name: &String) -> bool {
     ctx.lookup_local_name(name).is_none() && ctx.is_global_var(name)
 }
 
-fn codegen_raw_fn(ctx: &mut CodegenContext, closure: &Closure) -> GenResult<FunctionValue> {
+fn codegen_raw_fn(ctx: &mut CodegenContext, closure: &Closure) -> Result<FunctionValue, Error> {
     let fn_name = closure
         .lambda
         .name
@@ -421,7 +421,10 @@ pub fn compile_closure(ctx: &mut CodegenContext, closure: &Closure) -> CompileRe
         .enumerate()
     {
         let var_val = ctx.lookup_local_name(var).ok_or_else(|| {
-            Error::new_compilation_error(format!("undefined symbol: {}", var.as_str()))
+            Error::new(
+                ErrorType::Compilation,
+                format!("undefined symbol: {}", var.as_str()),
+            )
         })?;
 
         let free_var_ptr = unsafe {
