@@ -1,5 +1,3 @@
-use inkwell::context::Context;
-
 use std::error::Error;
 use std::fs;
 use std::io;
@@ -104,17 +102,14 @@ fn repl(ctx: &mut CodegenContext, dump_compiled: bool) {
 
 fn launch_repl(stdlib_path: Option<&str>, dump_compiled: bool) {
     unlisp_rt::defs::unlisp_rt_init_runtime();
-    let ctx = Context::create();
-    let mut codegen_ctx = CodegenContext::new(&ctx);
+    let mut codegen_ctx = CodegenContext::new();
     eval_stdlib(&mut codegen_ctx, stdlib_path);
     repl(&mut codegen_ctx, dump_compiled)
 }
 
 fn exec_file(stdlib_path: Option<&str>, file: &str) -> bool {
     unlisp_rt::defs::unlisp_rt_init_runtime();
-
-    let ctx = Context::create();
-    let mut codegen_ctx = CodegenContext::new(&ctx);
+    let mut codegen_ctx = CodegenContext::new();
 
     eval_stdlib(&mut codegen_ctx, stdlib_path);
     eval_and_expand_file(&mut codegen_ctx, file, false).is_ok()
@@ -123,9 +118,8 @@ fn exec_file(stdlib_path: Option<&str>, file: &str) -> bool {
 fn aot_file(stdlib_path: Option<&str>, rt_lib_path: &str, file: &str, out: &str) -> bool {
     unlisp_rt::defs::unlisp_rt_init_runtime();
 
-    let ctx = Context::create();
-    let mut expand_ctx = CodegenContext::new(&ctx);
-    let mut aot_ctx = CodegenContext::new(&ctx);
+    let mut expand_ctx = CodegenContext::new();
+    let mut aot_ctx = CodegenContext::new();
 
     let mut expanded = vec![];
 
@@ -134,7 +128,7 @@ fn aot_file(stdlib_path: Option<&str>, rt_lib_path: &str, file: &str, out: &str)
     if let Some(stdlib) = stdlib_path {
         expanded.append(
             &mut eval_and_expand_file(&mut expand_ctx, stdlib, true)
-                .expect("stdlib evaluation shouldn't cannot return Error"),
+                .expect("stdlib evaluation shouldn't return error"),
         );
     }
 

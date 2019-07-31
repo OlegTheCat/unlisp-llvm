@@ -7,5 +7,4 @@ edition = "2018"
 [dependencies]
 unlispc = { path = "../unlispc" }
 unlisp_rt = { path = "../unlisp_rt" }
-inkwell = { git = "https://github.com/TheDan64/inkwell", branch = "llvm7-0" }
 clap = "2.33.0"

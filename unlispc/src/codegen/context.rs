@@ -24,8 +24,8 @@ use std::rc::Rc;
 
 pub type CompiledFn = JitFunction<unsafe extern "C" fn() -> unlisp_rt::defs::Object>;
 
-pub struct CodegenContext<'a> {
-    pub llvm_ctx: &'a Context,
+pub struct CodegenContext {
+    pub llvm_ctx: Context,
     pub builder: Builder,
     pub pass_manager: PassManager<FunctionValue>,
 
@@ -39,7 +39,7 @@ pub struct CodegenContext<'a> {
     str_literal_globals: HashMap<String, GlobalValue>,
 }
 
-impl<'a> CodegenContext<'a> {
+impl CodegenContext {
     fn gen_unique_int(&mut self) -> u64 {
         self.counter += 1;
         self.counter
@@ -66,14 +66,15 @@ impl<'a> CodegenContext<'a> {
         fpm
     }
 
-    pub fn new(llvm_ctx: &'a Context) -> Self {
+    pub fn new() -> Self {
+        let llvm_ctx = Context::create();
         let module = llvm_ctx.create_module("mod_0");
         let ee = module
             .create_jit_execution_engine(OptimizationLevel::None)
             .expect("couldn't create execution engine");
         let builder = llvm_ctx.create_builder();
 
-        runtime_defs::gen_defs(llvm_ctx, &module);
+        runtime_defs::gen_defs(&llvm_ctx, &module);
 
         Self {
             counter: 0,
@@ -91,15 +92,16 @@ impl<'a> CodegenContext<'a> {
     }
 
     pub fn reinitialize(&mut self) {
+        let uniq_i = self.gen_unique_int();
         let module = self
             .llvm_ctx
-            .create_module(format!("mod_{}", self.gen_unique_int()).as_str());
+            .create_module(format!("mod_{}", uniq_i).as_str());
 
         self.execution_engine
             .add_module(&module)
             .expect("couldn't add module to execution engine");
 
-        runtime_defs::gen_defs(self.llvm_ctx, &module);
+        runtime_defs::gen_defs(&self.llvm_ctx, &module);
 
         self.pass_manager.finalize();
         self.pass_manager = Self::make_pass_manager(&module);

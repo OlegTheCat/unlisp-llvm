@@ -361,7 +361,6 @@ name = "unlisp"
 version = "0.1.0"
 dependencies = [
  "clap 2.33.0 (registry+https://github.com/rust-lang/crates.io-index)",
- "inkwell 0.1.0 (git+https://github.com/TheDan64/inkwell?branch=llvm7-0)",
  "unlisp_rt 0.1.0",
  "unlispc 0.1.0",
 ]
