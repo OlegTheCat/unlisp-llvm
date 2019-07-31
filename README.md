@@ -180,7 +180,7 @@ $ cat file.unl
 
 $ cargo run -p unlisp -- compile -f file.unl -o binary
     Finished dev [unoptimized + debuginfo] target(s) in 0.03s
-     Running `target/debug/compiler compile -f file.unl -o binary`
+     Running `target/debug/unlisp compile -f file.unl -o binary`
 Compiling file: file.unl...
 Linking with runtime library: ./unlisp_rt_staticlib/target/debug/libunlisp_rt.a...
 
