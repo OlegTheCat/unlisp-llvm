@@ -4,7 +4,6 @@ use std::error::Error;
 use std::fs;
 use std::io;
 use std::io::{Read, Write};
-use std::path::Path;
 use std::process::Command;
 
 use unlispc::codegen::context::CodegenContext;
@@ -12,9 +11,6 @@ use unlispc::reader;
 use unlispc::repr;
 
 use clap::{App, AppSettings, Arg, SubCommand};
-
-use inkwell::targets::*;
-use inkwell::OptimizationLevel;
 
 fn read_and_parse<'a, T: Read>(
     reader: &mut reader::Reader<'a, T>,
@@ -126,7 +122,6 @@ fn exec_file(stdlib_path: Option<&str>, file: &str) -> bool {
 
 fn aot_file(stdlib_path: Option<&str>, rt_lib_path: &str, file: &str, out: &str) -> bool {
     unlisp_rt::defs::unlisp_rt_init_runtime();
-    Target::initialize_all(&InitializationConfig::default());
 
     let ctx = Context::create();
     let mut expand_ctx = CodegenContext::new(&ctx);
@@ -151,39 +146,12 @@ fn aot_file(stdlib_path: Option<&str>, rt_lib_path: &str, file: &str, out: &str)
 
     expanded.append(&mut expanded_file.unwrap());
 
-    match aot_ctx.compile_hirs_with_main(expanded.as_slice()) {
-        Err(e) => {
-            eprintln!("compilation error: {}", e);
-            return false;
-        }
-
-        _ => (),
-    }
-
     let object_file = format!("{}.o", out);
 
-    let triple = TargetMachine::get_default_triple().to_string();
-    let target =
-        Target::from_triple(triple.as_str()).expect("couldn't create target from target triple");
-
-    let target_machine = target
-        .create_target_machine(
-            triple.as_str(),
-            "generic",
-            "",
-            OptimizationLevel::None,
-            RelocMode::Default,
-            CodeModel::Default,
-        )
-        .unwrap();
-
-    target_machine
-        .write_to_file(
-            aot_ctx.get_module(),
-            FileType::Object,
-            Path::new(object_file.as_str()),
-        )
-        .unwrap();
+    if let Err(e) = aot_ctx.compile_hirs_to_file(&object_file, expanded.as_slice()) {
+        eprintln!("{}", e);
+        return false;
+    }
 
     println!("Linking with runtime library: {}...", rt_lib_path);
 

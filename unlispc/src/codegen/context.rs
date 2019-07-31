@@ -10,13 +10,16 @@ use inkwell::context::Context;
 use inkwell::execution_engine::{ExecutionEngine, JitFunction};
 use inkwell::module::Module;
 use inkwell::passes::PassManager;
+use inkwell::targets::*;
 use inkwell::types::BasicTypeEnum;
 use inkwell::values::{BasicValueEnum, FunctionValue, GlobalValue, PointerValue};
 use inkwell::AddressSpace;
 use inkwell::OptimizationLevel;
+
 use unlisp_rt;
 
 use std::collections::{HashMap, HashSet};
+use std::path::Path;
 use std::rc::Rc;
 
 pub type CompiledFn = JitFunction<unsafe extern "C" fn() -> unlisp_rt::defs::Object>;
@@ -359,5 +362,31 @@ impl<'a> CodegenContext<'a> {
 
         unlisp_rt::exceptions::run_with_global_ex_handler(|| compiled_fn.call())
             .map_err(error::Error::rt_error)
+    }
+
+    pub fn compile_hirs_to_file(&mut self, file: &str, hirs: &[HIR]) -> Result<(), error::Error> {
+        Target::initialize_all(&InitializationConfig::default());
+        self.compile_hirs_with_main(hirs)?;
+
+        let triple = TargetMachine::get_default_triple().to_string();
+        let target = Target::from_triple(triple.as_str())
+            .expect("couldn't create target from target triple");
+
+        let target_machine = target
+            .create_target_machine(
+                triple.as_str(),
+                "generic",
+                "",
+                OptimizationLevel::None,
+                RelocMode::Default,
+                CodeModel::Default,
+            )
+            .expect("couldn't create target machine");
+
+        target_machine
+            .write_to_file(self.get_module(), FileType::Object, Path::new(file))
+            .expect("couldn't write module to file");
+
+        Ok(())
     }
 }
