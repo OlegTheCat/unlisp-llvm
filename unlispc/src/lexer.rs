@@ -168,3 +168,107 @@ impl<'a, T: Read> Lexer<'a, T> {
         Ok(Some(tok))
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn is_gen_eof<T>(result: &Result<T, Box<dyn Error>>) -> bool {
+        match result {
+            Err(e) => match e.downcast_ref::<io::Error>() {
+                Some(io_err) => io_err.kind() == io::ErrorKind::UnexpectedEof,
+                None => false,
+            },
+            _ => false,
+        }
+    }
+
+    #[test]
+    fn test_empty() {
+        let mut input = "".as_bytes();
+        let mut lexer = Lexer::create(&mut input);
+
+        assert_eq!(lexer.next_token().unwrap(), None);
+
+        let mut input = "foo".as_bytes();
+        let mut lexer = Lexer::create(&mut input);
+        let _ = lexer.next_token().unwrap().unwrap();
+
+        assert_eq!(lexer.next_token().unwrap(), None);
+    }
+
+    #[test]
+    fn test_integer_literal() {
+        let mut input = "1 12 1000 2019".as_bytes();
+        let mut lexer = Lexer::create(&mut input);
+
+        assert_eq!(lexer.next_token().unwrap().unwrap(), Token::IntegerLiteral(1));
+        assert_eq!(lexer.next_token().unwrap().unwrap(), Token::IntegerLiteral(12));
+        assert_eq!(lexer.next_token().unwrap().unwrap(), Token::IntegerLiteral(1000));
+        assert_eq!(lexer.next_token().unwrap().unwrap(), Token::IntegerLiteral(2019));
+    }
+
+    #[test]
+    fn test_string_literal() {
+        let mut input = "\"\" \"foo\" \"bar\"".as_bytes();
+        let mut lexer = Lexer::create(&mut input);
+
+        assert_eq!(
+            lexer.next_token().unwrap().unwrap(),
+            Token::StringLiteral("".to_string())
+        );
+        assert_eq!(
+            lexer.next_token().unwrap().unwrap(),
+            Token::StringLiteral("foo".to_string())
+        );
+        assert_eq!(
+            lexer.next_token().unwrap().unwrap(),
+            Token::StringLiteral("bar".to_string())
+        );
+    }
+
+    #[test]
+    fn test_incomplete_string() {
+        let mut input = "\"foo".as_bytes();
+        let mut lexer = Lexer::create(&mut input);
+
+        assert!(is_gen_eof(&lexer.next_token()));
+    }
+
+    #[test]
+    fn test_symbol() {
+        let mut input = "x foo bar*".as_bytes();
+        let mut lexer = Lexer::create(&mut input);
+
+        assert_eq!(lexer.next_token().unwrap().unwrap(), Token::Symbol("x".to_string()));
+        assert_eq!(
+            lexer.next_token().unwrap().unwrap(),
+            Token::Symbol("foo".to_string())
+        );
+        assert_eq!(
+            lexer.next_token().unwrap().unwrap(),
+            Token::Symbol("bar*".to_string())
+        );
+    }
+
+    #[test]
+    fn test_parens() {
+        let mut input = "( ) (".as_bytes();
+        let mut lexer = Lexer::create(&mut input);
+
+        assert_eq!(lexer.next_token().unwrap().unwrap(), Token::LeftPar);
+        assert_eq!(lexer.next_token().unwrap().unwrap(), Token::RightPar);
+        assert_eq!(lexer.next_token().unwrap().unwrap(), Token::LeftPar);
+    }
+
+    #[test]
+    fn test_comments() {
+        let mut input = ";; this is comment \n foo".as_bytes();
+        let mut lexer = Lexer::create(&mut input);
+
+        assert_eq!(
+            lexer.next_token().unwrap().unwrap(),
+            Token::Symbol("foo".to_string())
+        );
+    }
+}
