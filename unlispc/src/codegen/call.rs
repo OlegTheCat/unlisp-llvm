@@ -29,7 +29,7 @@ fn codegen_simple_call(
 
     let invoke_fn_ptr_ty = object_ty
         .fn_type(arg_tys.as_slice(), false)
-        .ptr_type(AddressSpace::Generic);;
+        .ptr_type(AddressSpace::Generic);
 
     let invoke_ptr_cast =
         ctx.builder
@@ -71,7 +71,7 @@ fn codegen_vararg_call(
 
     let invoke_fn_ptr_ty = object_ty
         .fn_type(arg_tys.as_slice(), false)
-        .ptr_type(AddressSpace::Generic);;
+        .ptr_type(AddressSpace::Generic);
 
     let n_varargs = ctx.builder.build_int_sub(
         ctx.llvm_ctx
