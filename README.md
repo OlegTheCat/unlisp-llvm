@@ -2,8 +2,6 @@
 
 LLVM-based compiler for a toy Lisp language. It has interactive REPL, supports AOT compilation and expr-by-expr file execution.
 
-For more info on how to run the compiler, refer to `cargo run -p unlisp -- --help`.
-
 ## Building
 
 ### Prerequisites
@@ -20,6 +18,12 @@ For more info on how to run the compiler, refer to `cargo run -p unlisp -- --hel
    * Ubuntu: `sudo apt install llvm-7-dev`
    * OS X: `brew install llvm@7 && export PATH="/usr/local/opt/llvm@7/bin:$PATH"`
 1. `cargo build && cargo build --manifest-path ./unlisp_rt_staticlib/Cargo.toml`
+
+## Running
+
+To launch REPL execute: `rlwrap cargo run -p unlisp repl`.
+
+For more info on how to run the compiler, refer to `cargo run -p unlisp -- --help`.
 
 ## Features
 
