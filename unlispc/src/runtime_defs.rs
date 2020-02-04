@@ -21,6 +21,7 @@ pub fn gen_defs(ctx: &Context, module: &Module) {
     unlisp_rt_object_from_list_gen_def(ctx, module);
     unlisp_rt_object_is_nil_gen_def(ctx, module);
     unlisp_rt_nil_object_gen_def(ctx, module);
+    unlisp_rt_t_object_gen_def(ctx, module);
     unlisp_rt_check_arity_gen_def(ctx, module);
     unlisp_rt_va_list_into_list_gen_def(ctx, module);
     unlisp_rt_list_first_gen_def(ctx, module);

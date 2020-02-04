@@ -16,6 +16,10 @@ use inkwell::AddressSpace;
 use crate::{exceptions, predefined, symbols};
 use unlisp_internal_macros::runtime_fn;
 
+// TODO: use lazy_static here
+static mut T: *mut Symbol = ptr::null_mut();
+static mut NIL: *mut Symbol = ptr::null_mut();
+
 // TODO: revise usage of Copy here
 #[derive(Clone, Copy)]
 #[repr(C)]
@@ -451,21 +455,22 @@ pub extern "C" fn unlisp_rt_object_from_list(list: List) -> Object {
 
 #[runtime_fn]
 pub extern "C" fn unlisp_rt_object_is_nil(o: Object) -> bool {
-    o.ty == ObjType::List && {
-        let list_ptr = o.unpack_list();
-        unsafe { (*list_ptr).len == 0 }
-    }
+    o.ty == ObjType::Symbol &&
+        unsafe {
+            o.obj.sym == NIL
+        }
 }
 
 #[runtime_fn]
 pub extern "C" fn unlisp_rt_nil_object() -> Object {
-    let list = List {
-        node: ptr::null_mut(),
-        len: 0,
-    };
-
-    Object::from_list(Box::into_raw(Box::new(list)))
+    unsafe { Object::from_symbol(NIL) }
 }
+
+#[runtime_fn]
+pub extern "C" fn unlisp_rt_t_object() -> Object {
+    unsafe { Object::from_symbol(T) }
+}
+
 
 #[runtime_fn]
 pub extern "C" fn unlisp_rt_check_arity(f: *const Function, arg_count: u64) -> bool {
@@ -539,6 +544,16 @@ pub extern "C" fn unlisp_rt_empty_list() -> List {
 pub extern "C" fn unlisp_rt_init_runtime() {
     symbols::init();
     predefined::init();
+    unsafe {
+        let t = symbols::get_or_intern_symbol("t".to_string());
+        let nil = symbols::get_or_intern_symbol("nil".to_string());
+
+        (*t).value = Box::into_raw(Box::new(Object::from_symbol(t)));
+        (*nil).value = Box::into_raw(Box::new(Object::from_symbol(nil)));
+
+        T = t;
+        NIL = nil;
+    }
 }
 
 #[runtime_fn]

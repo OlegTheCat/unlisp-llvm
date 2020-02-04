@@ -2,7 +2,7 @@ use crate::repr::If;
 
 use super::common::CompileResult;
 use super::context::CodegenContext;
-use super::literal::compile_nil_literal;
+use super::literal::compile_nil_t_literal;
 use super::top_level::compile_hir;
 
 use std::rc::Rc;
@@ -20,7 +20,7 @@ pub fn compile_if(ctx: &mut CodegenContext, if_hir: &If) -> CompileResult {
     let enter_else_block = ctx.enter_block();
     let compiled_else = match if_hir.else_hir.as_ref() {
         Some(hir) => compile_hir(ctx, hir)?,
-        None => compile_nil_literal(ctx),
+        None => compile_nil_t_literal(ctx, false),
     };
     ctx.builder.build_unconditional_branch(&merge_block);
     let exit_else_block = ctx.exit_block();

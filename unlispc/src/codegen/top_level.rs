@@ -9,7 +9,7 @@ use super::common::*;
 use super::context::CodegenContext;
 use super::if_codegen::compile_if;
 use super::let_block::compile_let_block;
-use super::literal::{compile_literal, compile_nil_literal};
+use super::literal::{compile_literal, compile_nil_t_literal};
 use super::quote::compile_quoted_literal;
 
 pub fn compile_hir(ctx: &mut CodegenContext, hir: &HIR) -> CompileResult {
@@ -23,7 +23,7 @@ pub fn compile_hir(ctx: &mut CodegenContext, hir: &HIR) -> CompileResult {
         HIR::LetBlock(let_block) => compile_let_block(ctx, let_block),
         HIR::DeclareVar(decl_var) => {
             ctx.declare_global_var(&decl_var.var_name);
-            Ok(compile_nil_literal(ctx))
+            Ok(compile_nil_t_literal(ctx, false))
         }
     }
 }
@@ -35,7 +35,7 @@ pub fn compile_hirs(ctx: &mut CodegenContext, hirs: &[HIR]) -> CompileResult {
         val_opt = Some(compile_hir(ctx, hir)?);
     }
 
-    let val_or_nil = val_opt.unwrap_or_else(|| compile_nil_literal(ctx));
+    let val_or_nil = val_opt.unwrap_or_else(|| compile_nil_t_literal(ctx, false));
 
     Ok(val_or_nil)
 }
