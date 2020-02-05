@@ -20,12 +20,17 @@ use unlisp_internal_macros::runtime_fn;
 static mut T: *mut Symbol = ptr::null_mut();
 static mut NIL: *mut Symbol = ptr::null_mut();
 
+fn to_heap<T>(x: T) -> *mut T {
+    Box::into_raw(Box::new(x))
+}
+
 // TODO: revise usage of Copy here
 #[derive(Clone, Copy)]
 #[repr(C)]
 pub union UntaggedObject {
     int: i64,
     list: *mut List,
+    cons: *mut Cons,
     sym: *mut Symbol,
     function: *mut Function,
     string: *const c_char,
@@ -39,6 +44,7 @@ pub enum ObjType {
     Symbol = 3,
     Function = 4,
     String = 5,
+    Cons = 6
 }
 
 impl fmt::Display for ObjType {
@@ -49,6 +55,7 @@ impl fmt::Display for ObjType {
             ObjType::Function => "function",
             ObjType::Symbol => "symbol",
             ObjType::String => "string",
+            ObjType::Cons => "cons",
         };
 
         write!(f, "{}", name)
@@ -75,7 +82,93 @@ impl PartialEq for Object {
                 ObjType::Function => self.obj.function == rhs.obj.function,
                 ObjType::Symbol => self.obj.sym == rhs.obj.sym,
                 ObjType::String => strcmp(self.obj.string, rhs.obj.string) == 0,
+                ObjType::Cons => *self.obj.cons == *rhs.obj.cons,
             }
+        }
+    }
+}
+
+#[repr(transparent)]
+#[derive(Clone)]
+pub struct ListLike(*mut c_void);
+
+impl ListLike {
+    pub fn from_cons(c: *mut Cons) -> Self {
+        Self(c as *mut c_void)
+    }
+
+    pub fn from_nil() -> Self {
+        unsafe { Self(NIL as *mut c_void) }
+    }
+
+    pub fn is_nil(&self) -> bool{
+        unsafe { self.0 == NIL as *mut c_void }
+    }
+
+    pub fn is_cons(&self) -> bool {
+        !self.is_nil()
+    }
+
+    pub fn as_nil(&self) -> *mut Symbol {
+        self.0 as *mut Symbol
+    }
+
+    pub fn as_cons(&self) -> *mut Cons {
+        self.0 as *mut Cons
+    }
+
+    pub fn len(&self) -> u64 {
+        if self.is_nil() {
+            0
+        } else {
+            1 + self.cdr().len()
+        }
+    }
+
+    pub fn to_object(&self) -> Object {
+        if self.is_nil() {
+            Object::nil()
+        } else {
+            Object::from_cons(self.as_cons())
+        }
+    }
+
+    pub fn cons_ptr(&self, o: *mut Object) -> Self {
+        let cons = Cons {
+            car: o,
+            cdr: to_heap(self.to_object())
+        };
+
+        Self::from_cons(to_heap(cons))
+    }
+
+    pub fn cons(&self, o: Object) -> Self {
+        self.cons_ptr(to_heap(o))
+    }
+
+    pub fn car(&self) -> Object {
+        if self.is_nil() {
+            unsafe {
+                exceptions::raise_error("cannot take element from nil".to_string())
+            }
+        }
+
+        unsafe { (*self.as_cons()).car() }
+    }
+
+    pub fn cdr(&self) -> Self {
+        if self.is_nil() {
+            self.clone()
+        } else {
+            unsafe { (*self.as_cons()).cdr().unpack_list_like() }
+        }
+    }
+
+    pub fn cdr_as_object(&self) -> Object {
+        if self.is_nil() {
+            Object::nil()
+        } else {
+            unsafe { (*self.as_cons()).cdr().clone() }
         }
     }
 }
@@ -94,6 +187,13 @@ impl Object {
         unsafe { exceptions::raise_cast_error(format!("{}", self.ty), format!("{}", target_ty)) };
     }
 
+    pub fn is_nil(&self) -> bool {
+        self.ty == ObjType::Symbol &&
+            unsafe {
+                self.obj.sym == NIL
+            }
+    }
+
     pub fn unpack_int(&self) -> i64 {
         if self.ty == ObjType::Int64 {
             unsafe { self.obj.int }
@@ -107,6 +207,22 @@ impl Object {
             unsafe { self.obj.list }
         } else {
             self.type_err(ObjType::List);
+        }
+    }
+
+    pub fn unpack_cons(&self) -> *mut Cons {
+        if self.ty == ObjType::Cons {
+            unsafe { self.obj.cons }
+        } else {
+            self.type_err(ObjType::Cons);
+        }
+    }
+
+    pub fn unpack_list_like(&self) -> ListLike {
+        if self.is_nil() {
+            ListLike::from_nil()
+        } else {
+            ListLike::from_cons(self.unpack_cons())
         }
     }
 
@@ -145,6 +261,13 @@ impl Object {
         Self {
             ty: ObjType::List,
             obj: UntaggedObject { list: list },
+        }
+    }
+
+    pub fn from_cons(cons: *mut Cons) -> Object {
+        Self {
+            ty: ObjType::Cons,
+            obj: UntaggedObject { cons: cons },
         }
     }
 
@@ -207,6 +330,7 @@ impl fmt::Display for Object {
             match self.ty {
                 ObjType::Int64 => write!(f, "{}", self.obj.int),
                 ObjType::List => display_list(self.obj.list, f),
+                ObjType::Cons => write!(f, "#<cons_object>"),
                 ObjType::Function => write!(
                     f,
                     "#<FUNCTION{}/{}>",
@@ -300,6 +424,50 @@ impl List {
         }
     }
 }
+
+#[repr(C)]
+#[derive(Clone)]
+pub struct Cons {
+    pub car: *mut Object,
+    pub cdr: *mut Object
+}
+
+impl PartialEq for Cons {
+    fn eq(&self, rhs: &Self) -> bool {
+        unsafe {
+            (self.car == rhs.car ||
+             *(self.car) == *(rhs.car))
+                && (self.cdr == rhs.cdr ||
+                    *(self.car) == *(rhs.cdr))
+        }
+    }
+}
+
+impl Cons {
+    #[cfg(feature = "llvm_defs")]
+    pub fn gen_llvm_def(context: &Context, _module: &Module) {
+        let i8_ptr_ty = context.i8_type().ptr_type(AddressSpace::Generic);
+        let struct_ty = context.opaque_struct_type("unlisp_rt_list");
+
+        struct_ty.set_body(&[i8_ptr_ty.into(), i8_ptr_ty.into()], false);
+    }
+
+    pub unsafe fn car(&self) -> Object {
+        (*self.car).clone()
+    }
+
+    pub unsafe fn cdr(&self) -> Object {
+        (*self.cdr).clone()
+    }
+
+    pub fn cons(&self, obj: Object) -> Cons {
+        Cons {
+            car: to_heap(obj),
+            cdr: to_heap(Object::from_cons(to_heap(self.clone()))),
+        }
+    }
+}
+
 
 #[repr(C)]
 pub struct Symbol {
@@ -449,16 +617,13 @@ pub extern "C" fn unlisp_rt_object_from_symbol(s: *mut Symbol) -> Object {
 }
 
 #[runtime_fn]
-pub extern "C" fn unlisp_rt_object_from_list(list: List) -> Object {
-    Object::from_list(Box::into_raw(Box::new(list)))
+pub extern "C" fn unlisp_rt_object_from_cons(cons: Cons) -> Object {
+    Object::from_cons(to_heap(cons))
 }
 
 #[runtime_fn]
 pub extern "C" fn unlisp_rt_object_is_nil(o: Object) -> bool {
-    o.ty == ObjType::Symbol &&
-        unsafe {
-            o.obj.sym == NIL
-        }
+    o.is_nil()
 }
 
 #[runtime_fn]
@@ -486,58 +651,33 @@ extern "C" {
     pub fn va_list_to_obj_array(n: u64, list: VaList) -> *mut Object;
 }
 
-pub fn obj_array_to_list(n: u64, arr: *mut Object, list: Option<*mut List>) -> *mut List {
-    let mut list = list.unwrap_or_else(|| {
-        Box::into_raw(Box::new(List {
-            node: ptr::null_mut(),
-            len: 0,
-        }))
-    });
-
+pub fn obj_array_to_list_like(n: u64, arr: *mut Object, mut list_like: ListLike) -> ListLike {
     for i in (0..n).rev() {
-        list = Box::into_raw(Box::new(List {
-            len: unsafe { (*list).len } + 1,
-            node: Box::into_raw(Box::new(Node {
-                val: unsafe { arr.offset(i as isize) },
-                next: list,
-            })),
-        }))
+        list_like = list_like.cons_ptr(unsafe { arr.offset(i as isize).clone() })
     }
 
-    list
+    list_like
 }
 
 #[runtime_fn]
-pub extern "C" fn unlisp_rt_va_list_into_list(n: u64, va_list: VaList) -> Object {
+pub extern "C" fn unlisp_rt_va_list_into_cons(n: u64, va_list: VaList) -> Object {
     let obj_array = unsafe { va_list_to_obj_array(n, va_list) };
-    let list = obj_array_to_list(n, obj_array, None);
-
-    Object::from_list(list)
+    obj_array_to_list_like(n, obj_array, ListLike::from_nil()).to_object()
 }
 
 #[runtime_fn]
-pub unsafe extern "C" fn unlisp_rt_list_first(list: List) -> Object {
-    list.first()
+pub unsafe extern "C" fn unlisp_rt_car(cons: Cons) -> Object {
+    cons.car()
 }
 
 #[runtime_fn]
-pub unsafe extern "C" fn unlisp_rt_list_rest(list: List) -> List {
-    list.rest()
+pub unsafe extern "C" fn unlisp_rt_list_cdr(cons: Cons) -> Object {
+    cons.cdr()
 }
 
 #[runtime_fn]
-pub unsafe extern "C" fn unlisp_rt_list_cons(el: Object, list: List) -> List {
-    list.cons(el)
-}
-
-#[runtime_fn]
-pub extern "C" fn unlisp_rt_empty_list() -> List {
-    let list = List {
-        node: ptr::null_mut(),
-        len: 0,
-    };
-
-    list
+pub unsafe extern "C" fn unlisp_rt_cons(el: Object, cons: Cons) -> Cons {
+    cons.cons(el)
 }
 
 #[runtime_fn]

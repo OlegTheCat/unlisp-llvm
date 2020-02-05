@@ -606,6 +606,9 @@ pub unsafe fn runtime_object_to_form(t_obj: defs::Object) -> Result<Form, Error>
 
             Form::List(converted)
         }
+        defs::ObjType::Cons => {
+            unimplemented!()
+        }
         defs::ObjType::Function => Err(Error::new(
             ErrorType::Macroexpansion,
             "embedding functions in code is not supported yet",

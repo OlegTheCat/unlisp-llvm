@@ -58,14 +58,13 @@ unsafe extern "C" fn native_add_invoke(_: *const Function, n: u64, mut args: ...
     Object::from_int(sum)
 }
 
-unsafe extern "C" fn native_add_apply(_: *const Function, args: List) -> Object {
+unsafe extern "C" fn native_add_apply(_: *const Function, args: ListLike) -> Object {
     let mut sum = 0;
-    let args_count = args.len;
     let mut cur_args = args;
 
-    for _ in 0..args_count {
-        sum += cur_args.first().unpack_int();
-        cur_args = cur_args.rest();
+    while !cur_args.is_nil() {
+        sum += cur_args.car().unpack_int();
+        cur_args = cur_args.cdr();
     }
 
     Object::from_int(sum)
@@ -87,15 +86,14 @@ unsafe extern "C" fn native_sub_invoke(
     Object::from_int(result)
 }
 
-unsafe extern "C" fn native_sub_apply(_: *const Function, args: List) -> Object {
-    let mut result = args.first().unpack_int();
+unsafe extern "C" fn native_sub_apply(_: *const Function, args: ListLike) -> Object {
+    let mut result = args.car().unpack_int();
 
-    let mut cur_args = args.rest();
-    let args_len = cur_args.len;
+    let mut cur_args = args.cdr();
 
-    for _ in 0..args_len {
-        result -= cur_args.first().unpack_int();
-        cur_args = cur_args.rest();
+    while !cur_args.is_nil() {
+        result -= cur_args.car().unpack_int();
+        cur_args = cur_args.cdr();
     }
 
     Object::from_int(result)
@@ -163,12 +161,13 @@ unsafe extern "C" fn native_first_invoke(_: *const Function, list: Object) -> Ob
     }
 }
 
-unsafe fn apply_to_list(f: *const Function, args: List) -> Object {
-    if !unlisp_rt_check_arity(f, args.len) {
-        exceptions::unlisp_rt_raise_arity_error((*f).name, (*f).arg_count, args.len);
+unsafe fn apply_to_list_like(f: *const Function, args: ListLike) -> Object {
+    let len = args.len();
+    if !unlisp_rt_check_arity(f, len) {
+        exceptions::unlisp_rt_raise_arity_error((*f).name, (*f).arg_count, len);
     }
 
-    let apply_fn: unsafe extern "C" fn(*const Function, List) -> Object =
+    let apply_fn: unsafe extern "C" fn(*const Function, ListLike) -> Object =
         mem::transmute((*f).apply_to_f_ptr);
     apply_fn(f, args)
 }
@@ -181,31 +180,35 @@ unsafe extern "C" fn native_apply_invoke(
 ) -> Object {
     let f = f.unpack_function();
     let args_arr = va_list_to_obj_array(n, args.as_va_list());
-    let last_arg = (*args_arr.offset((n as isize) - 1)).unpack_list();
-    let args_list = obj_array_to_list(n - 1, args_arr, Some(last_arg));
+    let last_arg = (*args_arr.offset((n as isize) - 1)).unpack_list_like();
+    let args = obj_array_to_list_like(n - 1, args_arr, last_arg);
 
-    apply_to_list(f, (*args_list).clone())
+    apply_to_list_like(f, args)
 }
 
-unsafe extern "C" fn native_apply_apply(_: *const Function, args: List) -> Object {
-    let f = args.first().unpack_function();
+unsafe extern "C" fn native_apply_apply(_: *const Function, args: ListLike) -> Object {
+    let f = args.car().unpack_function();
 
     let mut to_cons = vec![];
-    let mut f_args = args.rest();
+    let mut f_args = args.cdr();
 
-    while f_args.len != 1 {
-        to_cons.push(f_args.first());
-        f_args = f_args.rest();
+    loop {
+        let f_cdr = f_args.cdr();
+        if f_cdr.is_nil() {
+            break;
+        }
+        to_cons.push(f_args.car());
+        f_args = f_cdr;
     }
 
-    let cons_base = f_args.first().unpack_list();
+    let cons_base = f_args.car().unpack_list_like();
 
     let reconsed_args = to_cons
         .into_iter()
         .rev()
-        .fold((*cons_base).clone(), |acc, item| acc.cons(item));
+        .fold(cons_base, |acc, item| acc.cons(item));
 
-    apply_to_list(f, reconsed_args)
+    apply_to_list_like(f, reconsed_args)
 }
 
 #[trivial_apply]
