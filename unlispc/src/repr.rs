@@ -360,7 +360,7 @@ fn forms_to_hir(forms: &Vec<Form>) -> Result<HIR, Error> {
                         .collect::<Result<Vec<_>, _>>()?
                         .into_iter()
                         .rev()
-                        .fold(defs::List::empty(), |acc, obj| acc.cons(obj));
+                        .fold(defs::ListLike::from_nil(), |acc, obj| acc.cons(obj));
                     let expanded = predefined::call_macro(sym_fn, arg_objs_list)
                         .map_err(|e| Error::rt_error(e).convert(ErrorType::Macroexpansion))?;
                     let form = runtime_object_to_form(expanded)
@@ -573,20 +573,15 @@ pub fn form_to_runtime_object(form: &Form) -> Result<defs::Object, Error> {
             defs::Object::from_string(c_ptr)
         }
         Form::List(list) => {
-            let rt_list = list
-                .iter()
+            list.iter()
                 .map(form_to_runtime_object)
                 .collect::<Result<Vec<_>, _>>()?
                 .into_iter()
                 .rev()
-                .fold(defs::List::empty(), |acc, obj| acc.cons(obj));
-
-            defs::Object::from_list(Box::into_raw(Box::new(rt_list)))
+                .fold(defs::ListLike::from_nil(), |acc, obj| acc.cons(obj))
+                .to_object()
         }
-        Form::T => Err(Error::new(
-            ErrorType::Reader,
-            "t literal is not supported yet",
-        ))?,
+        Form::T => defs::Object::t()
     };
 
     Ok(obj)
@@ -595,30 +590,42 @@ pub fn form_to_runtime_object(form: &Form) -> Result<defs::Object, Error> {
 pub unsafe fn runtime_object_to_form(t_obj: defs::Object) -> Result<Form, Error> {
     let form = match t_obj.ty {
         defs::ObjType::Int64 => Form::Integer(t_obj.unpack_int()),
-        defs::ObjType::List => {
+        defs::ObjType::Cons => {
             let mut converted = vec![];
-            let mut list = t_obj.unpack_list();
+            let mut cons = t_obj.unpack_cons();
 
-            while (*list).len != 0 {
-                converted.push(runtime_object_to_form((*list).first())?);
-                list = (*list).rest_ptr();
+            while (*cons).cdr().ty == defs::ObjType::Cons {
+                converted.push(runtime_object_to_form((*cons).car())?);
+                cons = (*cons).cdr().unpack_cons();
+            }
+
+            if !(*cons).cdr().is_nil() {
+                Err(Error::new(
+                    ErrorType::Macroexpansion,
+                    "embedding pairs in code is not supported yet",
+                ))?;
+            } else {
+                converted.push(runtime_object_to_form((*cons).car())?);
             }
 
             Form::List(converted)
-        }
-        defs::ObjType::Cons => {
-            unimplemented!()
         }
         defs::ObjType::Function => Err(Error::new(
             ErrorType::Macroexpansion,
             "embedding functions in code is not supported yet",
         ))?,
-        defs::ObjType::Symbol => Form::Symbol(
-            CStr::from_ptr((*t_obj.unpack_symbol()).name)
-                .to_str()
-                .expect("string conversion failed")
-                .to_string(),
-        ),
+        defs::ObjType::Symbol => if t_obj.is_nil() {
+            Form::List(vec![])
+        } else {
+            Form::Symbol(
+                CStr::from_ptr((*t_obj.unpack_symbol()).name)
+                    .to_str()
+                    .expect("string conversion failed")
+                    .to_string(),
+            )
+        }
+
+
         defs::ObjType::String => Form::String(
             CStr::from_ptr(t_obj.unpack_string())
                 .to_str()

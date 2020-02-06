@@ -1,6 +1,3 @@
-(declare-var true)
-(set-symbol-value (quote true) (quote true))
-
 (set-symbol-function (quote list) (lambda (& args) args))
 
 (set-symbol-function
@@ -16,7 +13,7 @@
 
 (set-symbol-function
  (quote emptyp)
- (lambda (list) (if list nil true)))
+ (lambda (list) (if list nil t)))
 
 (set-symbol-function
  (quote append)
@@ -73,7 +70,7 @@
 (set-symbol-function
  (quote not)
  (lambda not (x)
-   (if x nil true)))
+   (if x nil t)))
 
 
 (set-symbol-function
@@ -200,7 +197,7 @@
 
 (defmacro and (& forms)
   (let ((reversed (if (emptyp forms)
-                      (list true)
+                      (list t)
                       (reverse forms))))
     (reduce
      (lambda (acc form)

@@ -76,7 +76,7 @@ impl CodegenContext {
 
         runtime_defs::gen_defs(&llvm_ctx, &module);
 
-        Self {
+        let mut s = Self {
             counter: 0,
             llvm_ctx: llvm_ctx,
             pass_manager: Self::make_pass_manager(&module),
@@ -88,7 +88,12 @@ impl CodegenContext {
             defined_str_literals: HashSet::new(),
             str_literal_globals: HashMap::new(),
             declared_syms: HashSet::new(),
-        }
+        };
+
+        s.declare_global_var(&"nil".to_string());
+        s.declare_global_var(&"t".to_string());
+
+        s
     }
 
     pub fn reinitialize(&mut self) {

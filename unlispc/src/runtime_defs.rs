@@ -6,7 +6,7 @@ use unlisp_rt::exceptions::*;
 
 pub fn gen_defs(ctx: &Context, module: &Module) {
     Object::gen_llvm_def(ctx, module);
-    List::gen_llvm_def(ctx, module);
+    Cons::gen_llvm_def(ctx, module);
     Function::gen_llvm_def(ctx, module);
     Symbol::gen_llvm_def(ctx, module);
 
@@ -18,16 +18,16 @@ pub fn gen_defs(ctx: &Context, module: &Module) {
     unlisp_rt_int_from_obj_gen_def(ctx, module);
     unlisp_rt_object_from_function_gen_def(ctx, module);
     unlisp_rt_object_from_symbol_gen_def(ctx, module);
+    unlisp_rt_object_from_cons_gen_def(ctx, module);
     unlisp_rt_object_from_list_gen_def(ctx, module);
     unlisp_rt_object_is_nil_gen_def(ctx, module);
     unlisp_rt_nil_object_gen_def(ctx, module);
     unlisp_rt_t_object_gen_def(ctx, module);
     unlisp_rt_check_arity_gen_def(ctx, module);
     unlisp_rt_va_list_into_list_gen_def(ctx, module);
-    unlisp_rt_list_first_gen_def(ctx, module);
-    unlisp_rt_list_rest_gen_def(ctx, module);
+    unlisp_rt_list_car_gen_def(ctx, module);
+    unlisp_rt_list_cdr_gen_def(ctx, module);
     unlisp_rt_list_cons_gen_def(ctx, module);
-    unlisp_rt_empty_list_gen_def(ctx, module);
     unlisp_rt_init_runtime_gen_def(ctx, module);
     unlisp_rt_symbol_value_gen_def(ctx, module);
     unlisp_rt_symbol_function_gen_def(ctx, module);

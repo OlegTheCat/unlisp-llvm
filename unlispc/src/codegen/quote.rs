@@ -1,5 +1,6 @@
 use crate::repr::Literal;
 use inkwell::values::BasicValueEnum;
+use inkwell::AddressSpace;
 
 use super::common::CompileResult;
 use super::context::CodegenContext;
@@ -18,15 +19,13 @@ fn compile_quoted_symbol(ctx: &mut CodegenContext, name: &String) -> BasicValueE
 
 fn compile_quoted_list(ctx: &mut CodegenContext, list: &Vec<Literal>) -> CompileResult {
     let cons_fn = ctx.lookup_known_fn("unlisp_rt_list_cons");
-    let empty_list_fn = ctx.lookup_known_fn("unlisp_rt_empty_list");
     let object_form_list_fn = ctx.lookup_known_fn("unlisp_rt_object_from_list");
 
-    let mut result = ctx
-        .builder
-        .build_call(empty_list_fn, &[], "empty")
-        .try_as_basic_value()
-        .left()
-        .unwrap();
+    let nil_sym = ctx.get_interned_sym("nil");
+
+    let mut result =
+        ctx.builder
+        .build_bitcast(nil_sym, ctx.llvm_ctx.i8_type().ptr_type(AddressSpace::Generic), "nil_as_i8*");
 
     for el in list.iter().rev() {
         let compiled = compile_quoted_literal(ctx, el)?;

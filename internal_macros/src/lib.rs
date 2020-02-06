@@ -34,10 +34,10 @@ fn build_apply_body(
         apply_body = quote! {
             #(#apply_body)*
             let #rest_ident = #rest_to_intern;
-            let #arg_ident = #rest_ident.first();
+            let #arg_ident = #rest_ident.car();
         };
 
-        rest_to_intern = quote!(#rest_ident.rest());
+        rest_to_intern = quote!(#rest_ident.cdr());
         invoke_args = quote!( #(#invoke_args)* #arg_ident ,);
     }
 
@@ -80,7 +80,7 @@ pub fn trivial_apply(
             use super::#invoke_ident;
 
             pub unsafe #abi fn #apply_fn_name(#f_arg_ident: *const Function,
-                                              #args_list_ident: List) -> Object
+                                              #args_list_ident: ListLike) -> Object
                 #apply_body
         }
         use #mod_ident::#apply_fn_name;
@@ -118,7 +118,7 @@ fn type_path_to_simple_name(ty_path: &syn::TypePath) -> Result<String, &str> {
 
 fn is_rt_type(name: &str) -> bool {
     match name {
-        "Object" | "Function" | "List" | "Symbol" => true,
+        "Object" | "Function" | "Cons" | "Symbol" => true,
         _ => false,
     }
 }
@@ -146,6 +146,8 @@ fn build_llvm_type_construction(
                                            .as_struct_type()
                                            .ptr_type(AddressSpace::Generic)),
                 "bool" => quote_spanned!(ty.span()=> #ctx_ident.bool_type()),
+                "ListLike" => quote_spanned!(ty.span()=> #ctx_ident.i8_type()
+                                             .ptr_type(AddressSpace::Generic)),
                 name if is_rt_type(name) => {
                     let llvm_name = format!("unlisp_rt_{}", name.to_lowercase());
                     quote_spanned!(ty.span()=> #module_ident

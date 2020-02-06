@@ -119,46 +119,18 @@ extern "C" fn native_set_fn_invoke(_: *const Function, sym: Object, func: Object
 }
 
 #[trivial_apply]
-extern "C" fn native_cons_invoke(_: *const Function, x: Object, list: Object) -> Object {
-    let list = list.unpack_list();
-    let len = unsafe { (*list).len };
-
-    let node = Node {
-        val: Box::into_raw(Box::new(x)),
-        next: list,
-    };
-
-    let new_list = List {
-        node: Box::into_raw(Box::new(node)),
-        len: len + 1,
-    };
-
-    Object::from_list(Box::into_raw(Box::new(new_list)))
+extern "C" fn native_cons_invoke(_: *const Function, x: Object, y: Object) -> Object {
+    Object::from_cons(to_heap(Cons::new(x, y)))
 }
 
 #[trivial_apply]
-extern "C" fn native_rest_invoke(_: *const Function, list: Object) -> Object {
-    let list = list.unpack_list();
-    let len = unsafe { (*list).len };
-
-    if len == 0 {
-        Object::nil()
-    } else {
-        let rest = unsafe { (*(*list).node).next };
-        Object::from_list(rest)
-    }
+extern "C" fn native_rest_invoke(_: *const Function, list_like: Object) -> Object {
+    list_like.unpack_list_like().cdr_as_object()
 }
 
 #[trivial_apply]
-unsafe extern "C" fn native_first_invoke(_: *const Function, list: Object) -> Object {
-    let list = list.unpack_list();
-    let len = (*list).len;
-
-    if len == 0 {
-        exceptions::raise_error("cannot do first on an empty list".to_string());
-    } else {
-        (*(*(*list).node).val).clone()
-    }
+unsafe extern "C" fn native_first_invoke(_: *const Function, list_like: Object) -> Object {
+    list_like.unpack_list_like().car()
 }
 
 unsafe fn apply_to_list_like(f: *const Function, args: ListLike) -> Object {
@@ -229,8 +201,8 @@ unsafe extern "C" fn native_set_macro_invoke(_: *const Function, f: Object) -> O
 
 #[trivial_apply]
 unsafe extern "C" fn native_listp_invoke(_: *const Function, x: Object) -> Object {
-    if x.ty == ObjType::List {
-        Object::from_symbol(symbols::get_or_intern_symbol("true".to_string()))
+    if x.is_nil() || x.ty == ObjType::Cons {
+        Object::t()
     } else {
         Object::nil()
     }
@@ -239,21 +211,22 @@ unsafe extern "C" fn native_listp_invoke(_: *const Function, x: Object) -> Objec
 #[trivial_apply]
 unsafe extern "C" fn native_symbolp_invoke(_: *const Function, x: Object) -> Object {
     if x.ty == ObjType::Symbol {
-        Object::from_symbol(symbols::get_or_intern_symbol("true".to_string()))
+        Object::t()
     } else {
         Object::nil()
     }
 }
 
-pub unsafe fn call_macro(f: *mut Function, args: List) -> Result<Object, RuntimeError> {
+pub unsafe fn call_macro(f: *mut Function, args: ListLike) -> Result<Object, RuntimeError> {
     assert!((*f).is_macro);
 
-    let apply_fn: unsafe extern "C" fn(*const Function, List) -> Object =
+    let apply_fn: unsafe extern "C" fn(*const Function, ListLike) -> Object =
         mem::transmute((*f).apply_to_f_ptr);
 
     exceptions::run_with_global_ex_handler(|| {
-        if !unlisp_rt_check_arity(f, args.len) {
-            exceptions::unlisp_rt_raise_arity_error((*f).name, (*f).arg_count, args.len);
+        let len = args.len();
+        if !unlisp_rt_check_arity(f, len) {
+            exceptions::unlisp_rt_raise_arity_error((*f).name, (*f).arg_count, len);
         }
         apply_fn(f, args)
     })
@@ -262,32 +235,27 @@ pub unsafe fn call_macro(f: *mut Function, args: List) -> Result<Object, Runtime
 #[trivial_apply]
 unsafe extern "C" fn native_macroexpand_1_invoke(_: *const Function, form: Object) -> Object {
     match &form.ty {
-        ObjType::List => {
-            let list = form.unpack_list();
-            if (*list).len == 0 {
-                form
-            } else {
-                let first = (*list).first();
+        ObjType::Cons => {
+            let cons = form.unpack_cons();
+            let car = (*cons).car();
+            match car.ty {
+                ObjType::Symbol => {
+                    let sym = car.unpack_symbol();
+                    let sym_fn = (*sym).function;
 
-                match first.ty {
-                    ObjType::Symbol => {
-                        let sym = first.unpack_symbol();
-                        let sym_fn = (*sym).function;
-
-                        if sym_fn.is_null() || !(*sym_fn).is_macro {
-                            form
-                        } else {
-                            match call_macro(sym_fn, (*list).rest()) {
-                                Ok(expanded) => expanded,
-                                Err(e) => exceptions::raise_error(format!("{}", e)),
-                            }
+                    if sym_fn.is_null() || !(*sym_fn).is_macro {
+                        form
+                    } else {
+                        match call_macro(sym_fn, (*cons).cdr().unpack_list_like()) {
+                            Ok(expanded) => expanded,
+                            Err(e) => exceptions::raise_error(format!("{}", e)),
                         }
                     }
-                    _ => form,
                 }
+                _ => form
             }
         }
-        _ => form,
+        _ => form
     }
 }
 

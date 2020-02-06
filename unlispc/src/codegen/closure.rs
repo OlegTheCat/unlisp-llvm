@@ -254,11 +254,11 @@ fn codegen_apply_to_fn(
         .as_ref()
         .map_or_else(|| "apply_closure".to_string(), |n| format!("apply_{}", n));
     let fn_name = ctx.mangle_str(fn_name);
-    let list_ty = ctx.lookup_known_type("unlisp_rt_list");
+    let list_ty = ctx.llvm_ctx.i8_type().ptr_type(AddressSpace::Generic);
     let obj_struct_ty = ctx.lookup_known_type("unlisp_rt_object");
     let has_restarg = closure.lambda.restarg.is_some();
 
-    let arg_tys: Vec<_> = vec![struct_ty.ptr_type(AddressSpace::Generic).into(), list_ty];
+    let arg_tys: Vec<_> = vec![struct_ty.ptr_type(AddressSpace::Generic).into(), list_ty.into()];
 
     let fn_ty = obj_struct_ty.fn_type(arg_tys.as_slice(), has_restarg);
     let function = ctx.get_module().add_function(&fn_name, fn_ty, None);
@@ -269,7 +269,7 @@ fn codegen_apply_to_fn(
     struct_ptr_par.set_name("fn_obj");
 
     let list_param = function.get_nth_param(1).unwrap();
-    list_param.as_struct_value().set_name("args");
+    list_param.into_pointer_value().set_name("args");
 
     let mut raw_fn_args = vec![];
 
@@ -290,8 +290,8 @@ fn codegen_apply_to_fn(
         raw_fn_args.push(arg);
     }
 
-    let list_first_fn = ctx.lookup_known_fn("unlisp_rt_list_first");
-    let list_rest_fn = ctx.lookup_known_fn("unlisp_rt_list_rest");
+    let list_first_fn = ctx.lookup_known_fn("unlisp_rt_list_car");
+    let list_rest_fn = ctx.lookup_known_fn("unlisp_rt_list_cdr");
 
     let mut cur_list = list_param;
 

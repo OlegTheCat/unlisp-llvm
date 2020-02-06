@@ -20,7 +20,7 @@ use unlisp_internal_macros::runtime_fn;
 static mut T: *mut Symbol = ptr::null_mut();
 static mut NIL: *mut Symbol = ptr::null_mut();
 
-fn to_heap<T>(x: T) -> *mut T {
+pub fn to_heap<T>(x: T) -> *mut T {
     Box::into_raw(Box::new(x))
 }
 
@@ -29,7 +29,6 @@ fn to_heap<T>(x: T) -> *mut T {
 #[repr(C)]
 pub union UntaggedObject {
     int: i64,
-    list: *mut List,
     cons: *mut Cons,
     sym: *mut Symbol,
     function: *mut Function,
@@ -40,7 +39,6 @@ pub union UntaggedObject {
 #[repr(C)]
 pub enum ObjType {
     Int64 = 1,
-    List = 2,
     Symbol = 3,
     Function = 4,
     String = 5,
@@ -51,7 +49,6 @@ impl fmt::Display for ObjType {
     fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
         let name = match self {
             ObjType::Int64 => "int",
-            ObjType::List => "list",
             ObjType::Function => "function",
             ObjType::Symbol => "symbol",
             ObjType::String => "string",
@@ -78,7 +75,6 @@ impl PartialEq for Object {
         unsafe {
             match self.ty {
                 ObjType::Int64 => self.obj.int == rhs.obj.int,
-                ObjType::List => *self.obj.list == *rhs.obj.list,
                 ObjType::Function => self.obj.function == rhs.obj.function,
                 ObjType::Symbol => self.obj.sym == rhs.obj.sym,
                 ObjType::String => strcmp(self.obj.string, rhs.obj.string) == 0,
@@ -202,14 +198,6 @@ impl Object {
         }
     }
 
-    pub fn unpack_list(&self) -> *mut List {
-        if self.ty == ObjType::List {
-            unsafe { self.obj.list }
-        } else {
-            self.type_err(ObjType::List);
-        }
-    }
-
     pub fn unpack_cons(&self) -> *mut Cons {
         if self.ty == ObjType::Cons {
             unsafe { self.obj.cons }
@@ -257,13 +245,6 @@ impl Object {
         }
     }
 
-    pub fn from_list(list: *mut List) -> Object {
-        Self {
-            ty: ObjType::List,
-            obj: UntaggedObject { list: list },
-        }
-    }
-
     pub fn from_cons(cons: *mut Cons) -> Object {
         Self {
             ty: ObjType::Cons,
@@ -293,32 +274,29 @@ impl Object {
     }
 
     pub fn nil() -> Object {
-        let list = List::empty();
+        unsafe { Object::from_symbol(NIL) }
+    }
 
-        Object::from_list(Box::into_raw(Box::new(list)))
+    pub fn t() -> Object {
+        unsafe { Object::from_symbol(T) }
     }
 }
 
-unsafe fn display_list(mut list: *const List, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
-    if (*list).len == 0 {
-        write!(f, "nil")?;
-    } else {
-        write!(f, "(")?;
-        let mut is_first = true;
+unsafe fn display_cons(cons: *const Cons, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
+    write!(f, "(")?;
+    write!(f, "{}", *(*cons).car)?;
 
-        while (*list).len != 0 {
-            let val = &(*(*(*list).node).val);
-            if is_first {
-                write!(f, "{}", val)?;
-                is_first = false;
-            } else {
-                write!(f, " {}", val)?;
-            }
+    let mut obj = (*cons).cdr;
+    while (*obj).ty == ObjType::Cons {
+        let cons = (*obj).unpack_cons();
+        write!(f, " {}", *(*cons).car)?;
+        obj = (*cons).cdr;
+    }
 
-            list = (*(*list).node).next;
-        }
-
+    if (*obj).is_nil() {
         write!(f, ")")?;
+    } else {
+        write!(f, " . {})", (*obj))?;
     }
 
     Ok(())
@@ -329,8 +307,7 @@ impl fmt::Display for Object {
         unsafe {
             match self.ty {
                 ObjType::Int64 => write!(f, "{}", self.obj.int),
-                ObjType::List => display_list(self.obj.list, f),
-                ObjType::Cons => write!(f, "#<cons_object>"),
+                ObjType::Cons => display_cons(self.obj.cons, f),
                 ObjType::Function => write!(
                     f,
                     "#<FUNCTION{}/{}>",
@@ -357,75 +334,6 @@ impl fmt::Display for Object {
 }
 
 #[repr(C)]
-pub struct Node {
-    pub val: *mut Object,
-    pub next: *mut List,
-}
-
-#[repr(C)]
-#[derive(Clone)]
-pub struct List {
-    pub node: *mut Node,
-    pub len: u64,
-}
-
-impl PartialEq for List {
-    fn eq(&self, rhs: &Self) -> bool {
-        if self.len != rhs.len {
-            return false;
-        }
-
-        if self.len == 0 {
-            return true;
-        }
-
-        unsafe {
-            *((*self.node).val) == *((*rhs.node).val) && *((*self.node).next) == *((*rhs.node).next)
-        }
-    }
-}
-
-impl List {
-    #[cfg(feature = "llvm_defs")]
-    pub fn gen_llvm_def(context: &Context, _module: &Module) {
-        let i64_ty = context.i64_type();
-        let i8_ptr_ty = context.i8_type().ptr_type(AddressSpace::Generic);
-        let struct_ty = context.opaque_struct_type("unlisp_rt_list");
-
-        struct_ty.set_body(&[i8_ptr_ty.into(), i64_ty.into()], false);
-    }
-
-    pub fn empty() -> List {
-        List {
-            node: ptr::null_mut(),
-            len: 0,
-        }
-    }
-
-    pub unsafe fn first(&self) -> Object {
-        (*(*self.node).val).clone()
-    }
-
-    pub unsafe fn rest(&self) -> List {
-        (*self.rest_ptr()).clone()
-    }
-
-    pub unsafe fn rest_ptr(&self) -> *mut List {
-        (*self.node).next
-    }
-
-    pub fn cons(&self, obj: Object) -> List {
-        List {
-            len: self.len + 1,
-            node: Box::into_raw(Box::new(Node {
-                val: Box::into_raw(Box::new(obj)),
-                next: Box::into_raw(Box::new(self.clone())),
-            })),
-        }
-    }
-}
-
-#[repr(C)]
 #[derive(Clone)]
 pub struct Cons {
     pub car: *mut Object,
@@ -447,9 +355,16 @@ impl Cons {
     #[cfg(feature = "llvm_defs")]
     pub fn gen_llvm_def(context: &Context, _module: &Module) {
         let i8_ptr_ty = context.i8_type().ptr_type(AddressSpace::Generic);
-        let struct_ty = context.opaque_struct_type("unlisp_rt_list");
+        let struct_ty = context.opaque_struct_type("unlisp_rt_cons");
 
         struct_ty.set_body(&[i8_ptr_ty.into(), i8_ptr_ty.into()], false);
+    }
+
+    pub fn new(x: Object, y: Object) -> Self {
+        Self {
+            car: to_heap(x),
+            cdr: to_heap(y)
+        }
     }
 
     pub unsafe fn car(&self) -> Object {
@@ -460,11 +375,8 @@ impl Cons {
         (*self.cdr).clone()
     }
 
-    pub fn cons(&self, obj: Object) -> Cons {
-        Cons {
-            car: to_heap(obj),
-            cdr: to_heap(Object::from_cons(to_heap(self.clone()))),
-        }
+    pub fn cons(&self, obj: Object) -> Self {
+        Self::new(obj, Object::from_cons(to_heap(self.clone())))
     }
 }
 
@@ -622,18 +534,24 @@ pub extern "C" fn unlisp_rt_object_from_cons(cons: Cons) -> Object {
 }
 
 #[runtime_fn]
+pub extern "C" fn unlisp_rt_object_from_list(list: ListLike) -> Object {
+    list.to_object()
+}
+
+
+#[runtime_fn]
 pub extern "C" fn unlisp_rt_object_is_nil(o: Object) -> bool {
     o.is_nil()
 }
 
 #[runtime_fn]
 pub extern "C" fn unlisp_rt_nil_object() -> Object {
-    unsafe { Object::from_symbol(NIL) }
+    Object::nil()
 }
 
 #[runtime_fn]
 pub extern "C" fn unlisp_rt_t_object() -> Object {
-    unsafe { Object::from_symbol(T) }
+    Object::t()
 }
 
 
@@ -660,24 +578,24 @@ pub fn obj_array_to_list_like(n: u64, arr: *mut Object, mut list_like: ListLike)
 }
 
 #[runtime_fn]
-pub extern "C" fn unlisp_rt_va_list_into_cons(n: u64, va_list: VaList) -> Object {
+pub extern "C" fn unlisp_rt_va_list_into_list(n: u64, va_list: VaList) -> Object {
     let obj_array = unsafe { va_list_to_obj_array(n, va_list) };
     obj_array_to_list_like(n, obj_array, ListLike::from_nil()).to_object()
 }
 
 #[runtime_fn]
-pub unsafe extern "C" fn unlisp_rt_car(cons: Cons) -> Object {
-    cons.car()
+pub unsafe extern "C" fn unlisp_rt_list_car(list: ListLike) -> Object {
+    list.car()
 }
 
 #[runtime_fn]
-pub unsafe extern "C" fn unlisp_rt_list_cdr(cons: Cons) -> Object {
-    cons.cdr()
+pub unsafe extern "C" fn unlisp_rt_list_cdr(list: ListLike) -> ListLike {
+    list.cdr()
 }
 
 #[runtime_fn]
-pub unsafe extern "C" fn unlisp_rt_cons(el: Object, cons: Cons) -> Cons {
-    cons.cons(el)
+pub unsafe extern "C" fn unlisp_rt_list_cons(el: Object, list: ListLike) -> ListLike {
+    list.cons(el)
 }
 
 #[runtime_fn]
