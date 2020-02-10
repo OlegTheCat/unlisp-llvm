@@ -159,6 +159,11 @@
     (lambda (unq name) (unq args)
       (unqs body)))))
 
+(defun length (x)
+  (if (emptyp x)
+      0
+      (+ 1 (length (rest x)))))
+
 (defun fibo (n)
   (if (equal n 1)
       1
