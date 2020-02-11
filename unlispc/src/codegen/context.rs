@@ -24,6 +24,12 @@ use std::rc::Rc;
 
 pub type CompiledFn = JitFunction<unsafe extern "C" fn() -> unlisp_rt::defs::Object>;
 
+struct EnvValue {
+    val: BasicValueEnum,
+    is_captured: bool,
+    is_box: bool,
+}
+
 pub struct CodegenContext {
     pub llvm_ctx: Context,
     pub builder: Builder,
@@ -33,7 +39,7 @@ pub struct CodegenContext {
     counter: u64,
     module: Module,
     blocks_stack: Vec<Rc<BasicBlock>>,
-    envs: Vec<HashMap<String, BasicValueEnum>>,
+    envs: Vec<HashMap<String, EnvValue>>,
     declared_syms: HashSet<String>,
     defined_str_literals: HashSet<String>,
     str_literal_globals: HashMap<String, GlobalValue>,
@@ -205,15 +211,42 @@ impl CodegenContext {
         self.envs.push(HashMap::new())
     }
 
-    pub fn save_env_mapping(&mut self, name: String, val: BasicValueEnum) {
+    pub fn save_env_mapping(&mut self, name: String, val: BasicValueEnum, is_captured: bool) {
         let len = self.envs.len();
-        self.envs[len - 1].insert(name, val);
+        self.envs[len - 1].insert(name, EnvValue { val: val, is_captured: is_captured, is_box: false });
+    }
+
+    pub fn replace_non_captured_mapping_value_with_box(&mut self, name: &String, val: BasicValueEnum) {
+        for env in self.envs.iter_mut().rev() {
+            // TODO: find a way to replace a value
+            if let Some(env_val) = env.get(name) {
+                if !env_val.is_captured {
+                    let new_env_val = EnvValue { val: val, is_captured: env_val.is_captured, is_box: true };
+                    env.insert(name.clone(), new_env_val);
+                    return;
+                }
+            }
+        }
+
+        panic!("couldn't find a value for name {} to replace", name)
+    }
+
+    pub fn lookup_non_captured_name(&self, name: &String) -> Option<(BasicValueEnum, bool)> {
+        for env in self.envs.iter().rev() {
+            if let Some(env_val) = env.get(name) {
+                if !env_val.is_captured {
+                    return Some((env_val.val.clone(), env_val.is_box));
+                }
+            }
+        }
+
+        None
     }
 
     pub fn lookup_local_name(&self, name: &String) -> Option<BasicValueEnum> {
         for env in self.envs.iter().rev() {
-            if let Some(val) = env.get(name) {
-                return Some(val.clone());
+            if let Some(env_val) = env.get(name) {
+                return Some(env_val.val.clone());
             }
         }
 

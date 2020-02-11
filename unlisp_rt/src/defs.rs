@@ -29,6 +29,7 @@ pub fn to_heap<T>(x: T) -> *mut T {
 #[repr(C)]
 pub union UntaggedObject {
     int: i64,
+    m_box: *mut MutableBox,
     cons: *mut Cons,
     sym: *mut Symbol,
     function: *mut Function,
@@ -39,6 +40,7 @@ pub union UntaggedObject {
 #[repr(C)]
 pub enum ObjType {
     Int64 = 1,
+    Box = 2,
     Symbol = 3,
     Function = 4,
     String = 5,
@@ -49,6 +51,7 @@ impl fmt::Display for ObjType {
     fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), fmt::Error> {
         let name = match self {
             ObjType::Int64 => "int",
+            ObjType::Box => "box",
             ObjType::Function => "function",
             ObjType::Symbol => "symbol",
             ObjType::String => "string",
@@ -75,11 +78,23 @@ impl PartialEq for Object {
         unsafe {
             match self.ty {
                 ObjType::Int64 => self.obj.int == rhs.obj.int,
+                ObjType::Box => *self.obj.m_box == *rhs.obj.m_box,
                 ObjType::Function => self.obj.function == rhs.obj.function,
                 ObjType::Symbol => self.obj.sym == rhs.obj.sym,
                 ObjType::String => strcmp(self.obj.string, rhs.obj.string) == 0,
                 ObjType::Cons => *self.obj.cons == *rhs.obj.cons,
             }
+        }
+    }
+}
+#[repr(C)]
+#[derive(Clone)]
+pub struct MutableBox(*mut Object);
+
+impl PartialEq for MutableBox {
+    fn eq(&self, rhs: &Self) -> bool {
+        unsafe {
+            *self.0 == *rhs.0
         }
     }
 }
@@ -164,7 +179,7 @@ impl ListLike {
         if self.is_nil() {
             Object::nil()
         } else {
-            unsafe { (*self.as_cons()).cdr().clone() }
+            unsafe { (*self.as_cons()).cdr() }
         }
     }
 }
@@ -184,6 +199,10 @@ impl Object {
     }
 
     pub fn is_nil(&self) -> bool {
+        if self.ty == ObjType::Box {
+            return self.unpack_underlying().is_nil();
+        }
+
         self.ty == ObjType::Symbol &&
             unsafe {
                 self.obj.sym == NIL
@@ -191,6 +210,10 @@ impl Object {
     }
 
     pub fn unpack_int(&self) -> i64 {
+        if self.ty == ObjType::Box {
+            return self.unpack_underlying().unpack_int();
+        }
+
         if self.ty == ObjType::Int64 {
             unsafe { self.obj.int }
         } else {
@@ -199,6 +222,10 @@ impl Object {
     }
 
     pub fn unpack_cons(&self) -> *mut Cons {
+        if self.ty == ObjType::Box {
+            return self.unpack_underlying().unpack_cons();
+        }
+
         if self.ty == ObjType::Cons {
             unsafe { self.obj.cons }
         } else {
@@ -207,6 +234,10 @@ impl Object {
     }
 
     pub fn unpack_list_like(&self) -> ListLike {
+        if self.ty == ObjType::Box {
+            return self.unpack_underlying().unpack_list_like();
+        }
+
         if self.is_nil() {
             ListLike::from_nil()
         } else {
@@ -215,6 +246,10 @@ impl Object {
     }
 
     pub fn unpack_symbol(&self) -> *mut Symbol {
+        if self.ty == ObjType::Box {
+            return self.unpack_underlying().unpack_symbol();
+        }
+
         if self.ty == ObjType::Symbol {
             unsafe { self.obj.sym }
         } else {
@@ -223,6 +258,10 @@ impl Object {
     }
 
     pub fn unpack_function(&self) -> *mut Function {
+        if self.ty == ObjType::Box {
+            return self.unpack_underlying().unpack_function();
+        }
+
         if self.ty == ObjType::Function {
             unsafe { self.obj.function }
         } else {
@@ -231,11 +270,36 @@ impl Object {
     }
 
     pub fn unpack_string(&self) -> *const c_char {
+        if self.ty == ObjType::Box {
+            return self.unpack_underlying().unpack_string();
+        }
+
         if self.ty == ObjType::String {
             unsafe { self.obj.string }
         } else {
             self.type_err(ObjType::String);
         }
+    }
+
+    pub fn unpack_box(&self) -> *mut MutableBox {
+        if self.ty == ObjType::Box {
+            // get the most underlying box
+            unsafe {
+                let b = self.obj.m_box;
+                let b_obj = (*b).0;
+                if (*b_obj).ty == ObjType::Box {
+                    (*b_obj).unpack_box()
+                } else {
+                    b
+                }
+            }
+        } else {
+            self.type_err(ObjType::Box);
+        }
+    }
+
+    pub fn unpack_underlying(&self) -> Object {
+        unsafe { (*(*self.unpack_box()).0).clone() }
     }
 
     pub fn from_int(i: i64) -> Object {
@@ -270,6 +334,13 @@ impl Object {
         Self {
             ty: ObjType::String,
             obj: UntaggedObject { string: string },
+        }
+    }
+
+    pub fn from_box(b: *mut MutableBox) -> Object {
+        Self {
+            ty: ObjType::Box,
+            obj: UntaggedObject { m_box: b},
         }
     }
 
@@ -308,6 +379,7 @@ impl fmt::Display for Object {
             match self.ty {
                 ObjType::Int64 => write!(f, "{}", self.obj.int),
                 ObjType::Cons => display_cons(self.obj.cons, f),
+                ObjType::Box => write!(f, "{}", (*(*self.obj.m_box).0)),
                 ObjType::Function => write!(
                     f,
                     "#<FUNCTION{}/{}>",
@@ -606,8 +678,8 @@ pub extern "C" fn unlisp_rt_init_runtime() {
         let t = symbols::get_or_intern_symbol("t".to_string());
         let nil = symbols::get_or_intern_symbol("nil".to_string());
 
-        (*t).value = Box::into_raw(Box::new(Object::from_symbol(t)));
-        (*nil).value = Box::into_raw(Box::new(Object::from_symbol(nil)));
+        (*t).value = to_heap(Object::from_symbol(t));
+        (*nil).value = to_heap(Object::from_symbol(nil));
 
         T = t;
         NIL = nil;
@@ -636,4 +708,20 @@ pub unsafe extern "C" fn unlisp_rt_symbol_function(sym: *mut Symbol) -> *mut Fun
     }
 
     f
+}
+
+#[runtime_fn]
+pub unsafe extern "C" fn unlisp_rt_make_box(o: Object) -> Object {
+    Object::from_box(to_heap(MutableBox(to_heap(o))))
+}
+
+#[runtime_fn]
+pub unsafe extern "C" fn unlisp_rt_box_ref(b: Object) -> Object {
+    (*(*b.unpack_box()).0).clone()
+}
+
+#[runtime_fn]
+pub unsafe extern "C" fn unlisp_rt_box_set(b: Object, val: Object) -> Object {
+    (*b.unpack_box()).0 = to_heap(val.clone());
+    val
 }

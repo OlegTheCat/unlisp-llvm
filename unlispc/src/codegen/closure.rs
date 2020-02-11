@@ -48,15 +48,16 @@ fn codegen_raw_fn(ctx: &mut CodegenContext, closure: &Closure) -> Result<Functio
 
     let args: Vec<_> = free_vars_no_globals
         .into_iter()
-        .chain(closure.lambda.arglist.iter())
-        .chain(closure.lambda.restarg.iter())
+        .map(|n| (n, true))
+        .chain(closure.lambda.arglist.iter().map(|n| (n, false)))
+        .chain(closure.lambda.restarg.iter().map(|n| (n, false)))
         .collect();
 
     let param_iter = function.get_param_iter();
 
-    for (arg, arg_name) in param_iter.zip(args.into_iter()) {
+    for (arg, (arg_name, is_free)) in param_iter.zip(args.into_iter()) {
         arg.as_struct_value().set_name(arg_name);
-        ctx.save_env_mapping(arg_name.clone(), arg);
+        ctx.save_env_mapping(arg_name.clone(), arg, is_free);
     }
 
     let val = compile_hirs(ctx, closure.lambda.body.as_slice())?;

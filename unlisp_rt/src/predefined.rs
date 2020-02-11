@@ -42,7 +42,7 @@ fn init_symbol_fn(
         has_restarg: vararg,
     };
 
-    let func = Box::into_raw(Box::new(func));
+    let func = to_heap(func);
 
     unsafe { (*sym).function = func };
 }
@@ -290,7 +290,7 @@ unsafe extern "C" fn native_stdout_write_invoke(_: *const Function, s: Object) -
 #[trivial_apply]
 unsafe extern "C" fn native_set_val_invoke(_: *const Function, sym: Object, val: Object) -> Object {
     let sym = sym.unpack_symbol();
-    (*sym).value = Box::into_raw(Box::new(val));
+    (*sym).value = to_heap(val);
 
     Object::nil()
 }

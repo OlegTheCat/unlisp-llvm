@@ -1,4 +1,4 @@
-use crate::error::Error;
+use crate::error::{Error, ErrorType};
 use crate::repr::*;
 
 use inkwell::types::BasicType;
@@ -15,6 +15,7 @@ use super::quote::compile_quoted_literal;
 pub fn compile_hir(ctx: &mut CodegenContext, hir: &HIR) -> CompileResult {
     match hir {
         HIR::Literal(literal) => compile_literal(ctx, literal),
+        HIR::SetExpr(e) => compile_set_expr(ctx, e),
         HIR::Call(call) => compile_call(ctx, call),
         HIR::Closure(closure) => compile_closure(ctx, closure),
         HIR::Lambda(_) => panic!("cannot compile raw lambda"),
@@ -26,6 +27,63 @@ pub fn compile_hir(ctx: &mut CodegenContext, hir: &HIR) -> CompileResult {
             Ok(compile_nil_t_literal(ctx, false))
         }
     }
+}
+
+fn compile_set_expr(ctx: &mut CodegenContext, e: &SetExpr) -> CompileResult {
+    let (non_captured, already_boxed) = ctx.lookup_non_captured_name(&e.name).ok_or_else(|| {
+        Error::new(
+            ErrorType::Compilation,
+            format!("no local symbol: {}", e.name.as_str()),
+        )
+    })?;
+
+    if !already_boxed {
+        let cur_block = ctx.cur_block();
+
+        let val_instr = non_captured.as_struct_value().as_instruction().unwrap();
+        let val_block = val_instr.get_parent().unwrap();
+
+        if let Some(i) = val_instr.get_next_instruction() {
+            ctx.builder.position_at(&val_block, &i);
+        } else {
+            ctx.builder.position_at_end(&val_block);
+        }
+
+        let boxed = ctx
+            .builder
+            .build_call(
+                ctx.lookup_known_fn("unlisp_rt_make_box"),
+                &[ctx.llvm_ctx.i8_type().const_int(0, true).into()],
+                "boxed",
+            )
+            .try_as_basic_value()
+            .left()
+            .unwrap();
+
+        let box_instr = boxed.as_struct_value().as_instruction().unwrap();
+        val_instr.replace_all_uses_with(&box_instr);
+
+        box_instr.set_operand(0, non_captured);
+
+        ctx.replace_non_captured_mapping_value_with_box(&e.name, boxed);
+        ctx.builder.position_at_end(&cur_block);
+    }
+
+    let local = ctx.lookup_local_name(&e.name).unwrap();
+
+    let set_expr_arg = compile_hir(ctx, &e.val)?;
+    let set_expr_val = ctx
+        .builder
+        .build_call(
+            ctx.lookup_known_fn("unlisp_rt_box_set"),
+            &[local, set_expr_arg],
+            "set_expr_val",
+        )
+        .try_as_basic_value()
+        .left()
+        .unwrap();
+
+    Ok(set_expr_val)
 }
 
 pub fn compile_hirs(ctx: &mut CodegenContext, hirs: &[HIR]) -> CompileResult {

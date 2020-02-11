@@ -8,7 +8,7 @@ pub fn compile_let_block(ctx: &mut CodegenContext, let_block: &LetBlock) -> Comp
     for (name, hir) in let_block.bindings.iter() {
         let val = compile_hir(ctx, hir)?;
         ctx.push_env();
-        ctx.save_env_mapping(name.clone(), val);
+        ctx.save_env_mapping(name.clone(), val, false);
     }
 
     let result = compile_hirs(ctx, let_block.body.as_slice())?;

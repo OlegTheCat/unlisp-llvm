@@ -35,4 +35,8 @@ pub fn gen_defs(ctx: &Context, module: &Module) {
     unlisp_rt_raise_undef_fn_error_gen_def(ctx, module);
     unlisp_rt_raise_arity_error_gen_def(ctx, module);
     unlisp_rt_run_with_global_ex_handler_gen_def(ctx, module);
+
+    unlisp_rt_make_box_gen_def(ctx, module);
+    unlisp_rt_box_ref_gen_def(ctx, module);
+    unlisp_rt_box_set_gen_def(ctx, module);
 }

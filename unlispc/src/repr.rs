@@ -85,6 +85,12 @@ pub enum Literal {
 }
 
 #[derive(Debug, PartialEq, Eq, Clone)]
+pub struct SetExpr {
+    pub name: String,
+    pub val: Box<HIR>
+}
+
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub enum HIR {
     DeclareVar(DeclareVar),
     Literal(Literal),
@@ -94,6 +100,7 @@ pub enum HIR {
     LetBlock(LetBlock),
     Quote(Quote),
     If(If),
+    SetExpr(SetExpr)
 }
 
 fn form_to_literal(form: &Form) -> Literal {
@@ -314,6 +321,32 @@ fn forms_to_hir(forms: &Vec<Form>) -> Result<HIR, Error> {
 
                 Ok(HIR::Lambda(lambda))
             }
+            Form::Symbol(s) if is(s, "set") => {
+                let sym = forms
+                    .get(1)
+                    .ok_or_else(|| Error::new(ErrorType::Reader, "no symbol in set"))?;
+                let sym = to_symbol(sym)
+                    .ok_or_else(|| Error::new(ErrorType::Reader, "not a symbol in set"))?;
+
+                let val = forms.get(2).ok_or_else(|| Error::new(ErrorType::Reader, "no value in set"))?;
+
+                if forms.get(3).is_some() {
+                    Err(Error::new(
+                        ErrorType::Reader,
+                        format!(
+                            "wrong number of arguments ({}) passed to set",
+                            forms.len() - 1
+                        ),
+                    ))?
+                }
+
+                let expr = SetExpr {
+                    name: sym.clone(),
+                    val: Box::new(form_to_hir(val)?)
+                };
+
+                Ok(HIR::SetExpr(expr))
+            }
             Form::Symbol(s) if is(s, "declare-var") => {
                 let sym = forms
                     .get(1)
@@ -407,6 +440,16 @@ fn convert_lambda_body_item(
     };
 
     match body_item {
+        HIR::SetExpr(e) => {
+            if !is_bound(&e.name) {
+                free_vars.insert(e.name.clone());
+            }
+
+            HIR::SetExpr(SetExpr {
+                name: e.name.clone(),
+                val: e.val.clone()
+            })
+        }
         HIR::Literal(Literal::SymbolLiteral(s)) => {
             if !is_bound(s) {
                 free_vars.insert(s.clone());
@@ -522,6 +565,7 @@ fn convert_lambda(lambda: &Lambda) -> Closure {
 
 pub fn convert_into_closures(hir: &HIR) -> HIR {
     match hir {
+        HIR::SetExpr(e) => HIR::SetExpr(e.clone()),
         HIR::Literal(literal) => HIR::Literal(literal.clone()),
         HIR::Lambda(lambda) => HIR::Closure(convert_lambda(lambda)),
         HIR::Closure(_) => panic!("unexpected closure"),
@@ -590,6 +634,7 @@ pub fn form_to_runtime_object(form: &Form) -> Result<defs::Object, Error> {
 pub unsafe fn runtime_object_to_form(t_obj: defs::Object) -> Result<Form, Error> {
     let form = match t_obj.ty {
         defs::ObjType::Int64 => Form::Integer(t_obj.unpack_int()),
+        defs::ObjType::Box => runtime_object_to_form(t_obj.unpack_underlying())?,
         defs::ObjType::Cons => {
             let mut converted = vec![];
             let mut cons = t_obj.unpack_cons();
