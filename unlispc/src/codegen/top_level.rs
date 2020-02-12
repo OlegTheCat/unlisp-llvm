@@ -30,6 +30,8 @@ pub fn compile_hir(ctx: &mut CodegenContext, hir: &HIR) -> CompileResult {
 }
 
 fn compile_set_expr(ctx: &mut CodegenContext, e: &SetExpr) -> CompileResult {
+    // looking up non-captured name to force it into a box in case it is mutated
+    // by a closure
     let (non_captured, already_boxed) = ctx.lookup_non_captured_name(&e.name).ok_or_else(|| {
         Error::new(
             ErrorType::Compilation,
@@ -53,6 +55,9 @@ fn compile_set_expr(ctx: &mut CodegenContext, e: &SetExpr) -> CompileResult {
             .builder
             .build_call(
                 ctx.lookup_known_fn("unlisp_rt_make_box"),
+                // ugly HACK: creating `make_box` call and passing 0 as an argument.
+                // we're not passing `non_captured` here, so it is not affected by
+                // `replace_all_uses_with` call below
                 &[ctx.llvm_ctx.i8_type().const_int(0, true).into()],
                 "boxed",
             )
@@ -61,8 +66,10 @@ fn compile_set_expr(ctx: &mut CodegenContext, e: &SetExpr) -> CompileResult {
             .unwrap();
 
         let box_instr = boxed.as_struct_value().as_instruction().unwrap();
+        // replacing all usages with a box
         val_instr.replace_all_uses_with(&box_instr);
 
+        // now we can set correct argument to `make_box` call
         box_instr.set_operand(0, non_captured);
 
         ctx.replace_non_captured_mapping_value_with_box(&e.name, boxed);
