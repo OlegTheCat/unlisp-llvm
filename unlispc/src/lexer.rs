@@ -35,7 +35,7 @@ impl<'a, T: Read> Lexer<'a, T> {
 
     fn valid_symbol_char(c: char) -> bool {
         c.is_alphanumeric()
-            || vec!['&', '*', '-', '?', '+', '<', '>', '_']
+            || vec!['&', '*', '-', '?', '+', '<', '>', '_', '!']
                 .into_iter()
                 .find(|x| c == *x)
                 .is_some()

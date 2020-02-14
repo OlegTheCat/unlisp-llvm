@@ -1,21 +1,21 @@
-(set-symbol-function (quote list) (lambda (& args) args))
+(set-symbol-function! (quote list) (lambda (& args) args))
 
-(set-symbol-function
+(set-symbol-function!
  (quote list*)
  (lambda list* (& args)
    (apply (symbol-function (quote apply))
           (symbol-function (quote list)) args)))
 
-(set-symbol-function
+(set-symbol-function!
  (quote funcall)
  (lambda funcall (f & args)
    (apply f args)))
 
-(set-symbol-function
+(set-symbol-function!
  (quote emptyp)
  (lambda (list) (if list nil t)))
 
-(set-symbol-function
+(set-symbol-function!
  (quote append)
  (lambda append (x y)
    (if (emptyp x)
@@ -23,18 +23,18 @@
        (cons (first x)
              (append (rest x) y)))))
 
-(set-symbol-function
+(set-symbol-function!
  (quote list*)
  (lambda list* (& args)
    (apply (symbol-function (quote apply))
           (symbol-function (quote list)) args)))
 
-(set-symbol-function
+(set-symbol-function!
  (quote funcall)
  (lambda funcall (f & args)
    (apply f args)))
 
-(set-symbol-function
+(set-symbol-function!
  (quote append)
  (lambda append (x y)
    (if (emptyp x)
@@ -42,7 +42,7 @@
        (cons (first x)
              (append (rest x) y)))))
 
-(set-symbol-function
+(set-symbol-function!
  (quote reduce)
  (lambda reduce (f init list)
    (if (emptyp list)
@@ -53,7 +53,7 @@
         (rest list)))))
 
 
-(set-symbol-function
+(set-symbol-function!
  (quote reverse-inner)
  (lambda (x acc)
    (if (emptyp x)
@@ -62,39 +62,39 @@
         (rest x)
         (cons (first x) acc)))))
 
-(set-symbol-function
+(set-symbol-function!
  (quote reverse)
  (lambda reverse (x)
    (reverse-inner x ())))
 
-(set-symbol-function
+(set-symbol-function!
  (quote not)
  (lambda not (x)
    (if x nil t)))
 
 
-(set-symbol-function
+(set-symbol-function!
  (quote unq)
  (lambda unq (x)
    (error "unq outside of qquote")))
 
-(set-macro (symbol-function (quote unq)))
+(set-macro! (symbol-function (quote unq)))
 
-(set-symbol-function
+(set-symbol-function!
  (quote unqs)
  (lambda unqs (x)
    (error "unqs outside of qquote")))
 
-(set-macro (symbol-function (quote unqs)))
+(set-macro! (symbol-function (quote unqs)))
 
-(set-symbol-function
+(set-symbol-function!
  (quote qquote)
  (lambda quote (x)
    (qquote-process x)))
 
-(set-macro (symbol-function (quote qquote)))
+(set-macro! (symbol-function (quote qquote)))
 
-(set-symbol-function
+(set-symbol-function!
  (quote qquote-process)
  (lambda qquote-process (x)
    (if (not (listp x))
@@ -109,12 +109,12 @@
                        (error "unqs after qquote")
                        (qquote-transform-list x))))))))
 
-(set-symbol-function
+(set-symbol-function!
  (quote qquote-transform-list)
  (lambda qquote-transform-list (x)
    (qquote-transform-list-inner x ())))
 
-(set-symbol-function
+(set-symbol-function!
  (quote qquote-transform-list-inner)
  (lambda qquote-transform-list-inner (x transformed-acc)
    (if (emptyp x)
@@ -126,7 +126,7 @@
         (cons (qquote-transform-list-item (first x))
               transformed-acc)))))
 
-(set-symbol-function
+(set-symbol-function!
  (quote qquote-transform-list-item)
  (lambda qquote-transform-list-item (x)
    (if (not (listp x))
@@ -139,22 +139,22 @@
                    (first (rest x))
                    (list (quote list) (qquote-process x))))))))
 
-(set-symbol-function
+(set-symbol-function!
  (quote defmacro)
  (lambda defmacro (name args & body)
    (qquote
     (let ((--macro-fn (lambda (unq name) (unq args)
                         (unqs body))))
-      (set-symbol-function
+      (set-symbol-function!
        (quote (unq name))
        --macro-fn)
-      (set-macro --macro-fn)))))
+      (set-macro! --macro-fn)))))
 
-(set-macro (symbol-function (quote defmacro)))
+(set-macro! (symbol-function (quote defmacro)))
 
 (defmacro defun (name args & body)
   (qquote
-   (set-symbol-function
+   (set-symbol-function!
     (quote (unq name))
     (lambda (unq name) (unq args)
       (unqs body)))))
@@ -318,7 +318,7 @@
   (qquote
    (let ()
      (declare-var (unq sym))
-     (set-symbol-value (quote (unq sym))
+     (set-symbol-value! (quote (unq sym))
               (unq val)))))
 
 (defmacro defonce (sym val)

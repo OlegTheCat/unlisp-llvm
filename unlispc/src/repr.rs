@@ -321,7 +321,7 @@ fn forms_to_hir(forms: &Vec<Form>) -> Result<HIR, Error> {
 
                 Ok(HIR::Lambda(lambda))
             }
-            Form::Symbol(s) if is(s, "set") => {
+            Form::Symbol(s) if is(s, "set!") => {
                 let sym = forms
                     .get(1)
                     .ok_or_else(|| Error::new(ErrorType::Reader, "no symbol in set"))?;
