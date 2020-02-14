@@ -44,7 +44,7 @@ pub enum ObjType {
     Symbol = 3,
     Function = 4,
     String = 5,
-    Cons = 6
+    Cons = 6,
 }
 
 impl fmt::Display for ObjType {
@@ -93,9 +93,7 @@ pub struct MutableBox(*mut Object);
 
 impl PartialEq for MutableBox {
     fn eq(&self, rhs: &Self) -> bool {
-        unsafe {
-            *self.0 == *rhs.0
-        }
+        unsafe { *self.0 == *rhs.0 }
     }
 }
 
@@ -112,7 +110,7 @@ impl ListLike {
         unsafe { Self(NIL as *mut c_void) }
     }
 
-    pub fn is_nil(&self) -> bool{
+    pub fn is_nil(&self) -> bool {
         unsafe { self.0 == NIL as *mut c_void }
     }
 
@@ -147,7 +145,7 @@ impl ListLike {
     pub fn cons_ptr(&self, o: *mut Object) -> Self {
         let cons = Cons {
             car: o,
-            cdr: to_heap(self.to_object())
+            cdr: to_heap(self.to_object()),
         };
 
         Self::from_cons(to_heap(cons))
@@ -159,9 +157,7 @@ impl ListLike {
 
     pub fn car(&self) -> Object {
         if self.is_nil() {
-            unsafe {
-                exceptions::raise_error("cannot take element from nil".to_string())
-            }
+            unsafe { exceptions::raise_error("cannot take element from nil".to_string()) }
         }
 
         unsafe { (*self.as_cons()).car() }
@@ -203,10 +199,7 @@ impl Object {
             return self.unpack_underlying().is_nil();
         }
 
-        self.ty == ObjType::Symbol &&
-            unsafe {
-                self.obj.sym == NIL
-            }
+        self.ty == ObjType::Symbol && unsafe { self.obj.sym == NIL }
     }
 
     pub fn unpack_int(&self) -> i64 {
@@ -340,7 +333,7 @@ impl Object {
     pub fn from_box(b: *mut MutableBox) -> Object {
         Self {
             ty: ObjType::Box,
-            obj: UntaggedObject { m_box: b},
+            obj: UntaggedObject { m_box: b },
         }
     }
 
@@ -409,16 +402,14 @@ impl fmt::Display for Object {
 #[derive(Clone)]
 pub struct Cons {
     pub car: *mut Object,
-    pub cdr: *mut Object
+    pub cdr: *mut Object,
 }
 
 impl PartialEq for Cons {
     fn eq(&self, rhs: &Self) -> bool {
         unsafe {
-            (self.car == rhs.car ||
-             *(self.car) == *(rhs.car))
-                && (self.cdr == rhs.cdr ||
-                    *(self.car) == *(rhs.cdr))
+            (self.car == rhs.car || *(self.car) == *(rhs.car))
+                && (self.cdr == rhs.cdr || *(self.car) == *(rhs.cdr))
         }
     }
 }
@@ -435,7 +426,7 @@ impl Cons {
     pub fn new(x: Object, y: Object) -> Self {
         Self {
             car: to_heap(x),
-            cdr: to_heap(y)
+            cdr: to_heap(y),
         }
     }
 
@@ -451,7 +442,6 @@ impl Cons {
         Self::new(obj, Object::from_cons(to_heap(self.clone())))
     }
 }
-
 
 #[repr(C)]
 pub struct Symbol {
@@ -610,7 +600,6 @@ pub extern "C" fn unlisp_rt_object_from_list(list: ListLike) -> Object {
     list.to_object()
 }
 
-
 #[runtime_fn]
 pub extern "C" fn unlisp_rt_object_is_nil(o: Object) -> bool {
     o.is_nil()
@@ -625,7 +614,6 @@ pub extern "C" fn unlisp_rt_nil_object() -> Object {
 pub extern "C" fn unlisp_rt_t_object() -> Object {
     Object::t()
 }
-
 
 #[runtime_fn]
 pub extern "C" fn unlisp_rt_check_arity(f: *const Function, arg_count: u64) -> bool {

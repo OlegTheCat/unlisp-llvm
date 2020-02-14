@@ -213,15 +213,30 @@ impl CodegenContext {
 
     pub fn save_env_mapping(&mut self, name: String, val: BasicValueEnum, is_captured: bool) {
         let len = self.envs.len();
-        self.envs[len - 1].insert(name, EnvValue { val: val, is_captured: is_captured, is_box: false });
+        self.envs[len - 1].insert(
+            name,
+            EnvValue {
+                val: val,
+                is_captured: is_captured,
+                is_box: false,
+            },
+        );
     }
 
-    pub fn replace_non_captured_mapping_value_with_box(&mut self, name: &String, val: BasicValueEnum) {
+    pub fn replace_non_captured_mapping_value_with_box(
+        &mut self,
+        name: &String,
+        val: BasicValueEnum,
+    ) {
         for env in self.envs.iter_mut().rev() {
             // TODO: find a way to replace a value
             if let Some(env_val) = env.get(name) {
                 if !env_val.is_captured {
-                    let new_env_val = EnvValue { val: val, is_captured: env_val.is_captured, is_box: true };
+                    let new_env_val = EnvValue {
+                        val: val,
+                        is_captured: env_val.is_captured,
+                        is_box: true,
+                    };
                     env.insert(name.clone(), new_env_val);
                     return;
                 }

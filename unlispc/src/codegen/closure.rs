@@ -259,7 +259,10 @@ fn codegen_apply_to_fn(
     let obj_struct_ty = ctx.lookup_known_type("unlisp_rt_object");
     let has_restarg = closure.lambda.restarg.is_some();
 
-    let arg_tys: Vec<_> = vec![struct_ty.ptr_type(AddressSpace::Generic).into(), list_ty.into()];
+    let arg_tys: Vec<_> = vec![
+        struct_ty.ptr_type(AddressSpace::Generic).into(),
+        list_ty.into(),
+    ];
 
     let fn_ty = obj_struct_ty.fn_type(arg_tys.as_slice(), has_restarg);
     let function = ctx.get_module().add_function(&fn_name, fn_ty, None);

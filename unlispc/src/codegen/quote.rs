@@ -23,9 +23,11 @@ fn compile_quoted_list(ctx: &mut CodegenContext, list: &Vec<Literal>) -> Compile
 
     let nil_sym = ctx.get_interned_sym("nil");
 
-    let mut result =
-        ctx.builder
-        .build_bitcast(nil_sym, ctx.llvm_ctx.i8_type().ptr_type(AddressSpace::Generic), "nil_as_i8*");
+    let mut result = ctx.builder.build_bitcast(
+        nil_sym,
+        ctx.llvm_ctx.i8_type().ptr_type(AddressSpace::Generic),
+        "nil_as_i8*",
+    );
 
     for el in list.iter().rev() {
         let compiled = compile_quoted_literal(ctx, el)?;

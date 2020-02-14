@@ -252,10 +252,10 @@ unsafe extern "C" fn native_macroexpand_1_invoke(_: *const Function, form: Objec
                         }
                     }
                 }
-                _ => form
+                _ => form,
             }
         }
-        _ => form
+        _ => form,
     }
 }
 

@@ -118,18 +118,9 @@ mod tests {
         let mut reader = Reader::create(&mut input);
 
         assert_eq!(reader.read_form().unwrap().unwrap(), Form::Integer(1));
-        assert_eq!(
-            reader.read_form().unwrap().unwrap(),
-            Form::Integer(12)
-        );
-        assert_eq!(
-            reader.read_form().unwrap().unwrap(),
-            Form::Integer(1000)
-        );
-        assert_eq!(
-            reader.read_form().unwrap().unwrap(),
-            Form::Integer(2019)
-        );
+        assert_eq!(reader.read_form().unwrap().unwrap(), Form::Integer(12));
+        assert_eq!(reader.read_form().unwrap().unwrap(), Form::Integer(1000));
+        assert_eq!(reader.read_form().unwrap().unwrap(), Form::Integer(2019));
     }
 
     #[test]

@@ -202,10 +202,22 @@ mod tests {
         let mut input = "1 12 1000 2019".as_bytes();
         let mut lexer = Lexer::create(&mut input);
 
-        assert_eq!(lexer.next_token().unwrap().unwrap(), Token::IntegerLiteral(1));
-        assert_eq!(lexer.next_token().unwrap().unwrap(), Token::IntegerLiteral(12));
-        assert_eq!(lexer.next_token().unwrap().unwrap(), Token::IntegerLiteral(1000));
-        assert_eq!(lexer.next_token().unwrap().unwrap(), Token::IntegerLiteral(2019));
+        assert_eq!(
+            lexer.next_token().unwrap().unwrap(),
+            Token::IntegerLiteral(1)
+        );
+        assert_eq!(
+            lexer.next_token().unwrap().unwrap(),
+            Token::IntegerLiteral(12)
+        );
+        assert_eq!(
+            lexer.next_token().unwrap().unwrap(),
+            Token::IntegerLiteral(1000)
+        );
+        assert_eq!(
+            lexer.next_token().unwrap().unwrap(),
+            Token::IntegerLiteral(2019)
+        );
     }
 
     #[test]
@@ -240,7 +252,10 @@ mod tests {
         let mut input = "x foo bar*".as_bytes();
         let mut lexer = Lexer::create(&mut input);
 
-        assert_eq!(lexer.next_token().unwrap().unwrap(), Token::Symbol("x".to_string()));
+        assert_eq!(
+            lexer.next_token().unwrap().unwrap(),
+            Token::Symbol("x".to_string())
+        );
         assert_eq!(
             lexer.next_token().unwrap().unwrap(),
             Token::Symbol("foo".to_string())

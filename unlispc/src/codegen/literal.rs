@@ -18,7 +18,11 @@ fn compile_integer(ctx: &mut CodegenContext, i: i64) -> BasicValueEnum {
 }
 
 pub fn compile_nil_t_literal(ctx: &CodegenContext, t: bool) -> BasicValueEnum {
-    let fn_name = if t { "unlisp_rt_t_object" } else { "unlisp_rt_nil_object" };
+    let fn_name = if t {
+        "unlisp_rt_t_object"
+    } else {
+        "unlisp_rt_nil_object"
+    };
     ctx.builder
         .build_call(ctx.lookup_known_fn(fn_name), &[], "nil_obj")
         .try_as_basic_value()
@@ -52,6 +56,6 @@ pub fn compile_literal(ctx: &mut CodegenContext, literal: &Literal) -> CompileRe
             })?;
             Ok(val)
         }
-        Literal::T => Ok(compile_nil_t_literal(ctx, true))
+        Literal::T => Ok(compile_nil_t_literal(ctx, true)),
     }
 }

@@ -87,7 +87,7 @@ pub enum Literal {
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub struct SetExpr {
     pub name: String,
-    pub val: Box<HIR>
+    pub val: Box<HIR>,
 }
 
 #[derive(Debug, PartialEq, Eq, Clone)]
@@ -100,7 +100,7 @@ pub enum HIR {
     LetBlock(LetBlock),
     Quote(Quote),
     If(If),
-    SetExpr(SetExpr)
+    SetExpr(SetExpr),
 }
 
 fn form_to_literal(form: &Form) -> Literal {
@@ -328,7 +328,9 @@ fn forms_to_hir(forms: &Vec<Form>) -> Result<HIR, Error> {
                 let sym = to_symbol(sym)
                     .ok_or_else(|| Error::new(ErrorType::Reader, "not a symbol in set"))?;
 
-                let val = forms.get(2).ok_or_else(|| Error::new(ErrorType::Reader, "no value in set"))?;
+                let val = forms
+                    .get(2)
+                    .ok_or_else(|| Error::new(ErrorType::Reader, "no value in set"))?;
 
                 if forms.get(3).is_some() {
                     Err(Error::new(
@@ -342,7 +344,7 @@ fn forms_to_hir(forms: &Vec<Form>) -> Result<HIR, Error> {
 
                 let expr = SetExpr {
                     name: sym.clone(),
-                    val: Box::new(form_to_hir(val)?)
+                    val: Box::new(form_to_hir(val)?),
                 };
 
                 Ok(HIR::SetExpr(expr))
@@ -447,7 +449,7 @@ fn convert_lambda_body_item(
 
             HIR::SetExpr(SetExpr {
                 name: e.name.clone(),
-                val: e.val.clone()
+                val: e.val.clone(),
             })
         }
         HIR::Literal(Literal::SymbolLiteral(s)) => {
@@ -616,16 +618,15 @@ pub fn form_to_runtime_object(form: &Form) -> Result<defs::Object, Error> {
             let c_ptr: *const c_char = c_str.into_raw();
             defs::Object::from_string(c_ptr)
         }
-        Form::List(list) => {
-            list.iter()
-                .map(form_to_runtime_object)
-                .collect::<Result<Vec<_>, _>>()?
-                .into_iter()
-                .rev()
-                .fold(defs::ListLike::from_nil(), |acc, obj| acc.cons(obj))
-                .to_object()
-        }
-        Form::T => defs::Object::t()
+        Form::List(list) => list
+            .iter()
+            .map(form_to_runtime_object)
+            .collect::<Result<Vec<_>, _>>()?
+            .into_iter()
+            .rev()
+            .fold(defs::ListLike::from_nil(), |acc, obj| acc.cons(obj))
+            .to_object(),
+        Form::T => defs::Object::t(),
     };
 
     Ok(obj)
@@ -659,17 +660,18 @@ pub unsafe fn runtime_object_to_form(t_obj: defs::Object) -> Result<Form, Error>
             ErrorType::Macroexpansion,
             "embedding functions in code is not supported yet",
         ))?,
-        defs::ObjType::Symbol => if t_obj.is_nil() {
-            Form::List(vec![])
-        } else {
-            Form::Symbol(
-                CStr::from_ptr((*t_obj.unpack_symbol()).name)
-                    .to_str()
-                    .expect("string conversion failed")
-                    .to_string(),
-            )
+        defs::ObjType::Symbol => {
+            if t_obj.is_nil() {
+                Form::List(vec![])
+            } else {
+                Form::Symbol(
+                    CStr::from_ptr((*t_obj.unpack_symbol()).name)
+                        .to_str()
+                        .expect("string conversion failed")
+                        .to_string(),
+                )
+            }
         }
-
 
         defs::ObjType::String => Form::String(
             CStr::from_ptr(t_obj.unpack_string())
