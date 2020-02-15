@@ -337,6 +337,14 @@ impl CodegenContext {
         }
     }
 
+    pub fn find_function_by_parameter(&self, p: BasicValueEnum) -> Option<FunctionValue> {
+        let mut functions = self.blocks_stack.iter().filter_map(|b| b.get_parent());
+
+        functions.find(|f| {
+            f.get_param_iter().find(|f_par| p == *f_par).is_some()
+        })
+    }
+
     pub fn codegen_hirs(&mut self, hirs: &[HIR]) -> Result<String, error::Error> {
         compile_top_level_hirs(self, hirs)
     }

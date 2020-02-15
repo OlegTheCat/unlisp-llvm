@@ -42,13 +42,24 @@ fn compile_set_expr(ctx: &mut CodegenContext, e: &SetExpr) -> CompileResult {
     if !already_boxed {
         let cur_block = ctx.cur_block();
 
-        let val_instr = non_captured.as_struct_value().as_instruction().unwrap();
-        let val_block = val_instr.get_parent().unwrap();
+        let struct_val = non_captured.as_struct_value();
 
-        if let Some(i) = val_instr.get_next_instruction() {
-            ctx.builder.position_at(&val_block, &i);
+        if let Some(instr) = struct_val.as_instruction() {
+            let block = instr.get_parent().unwrap();
+            if let Some(i) = instr.get_next_instruction() {
+                ctx.builder.position_at(&block, &i);
+            } else {
+                ctx.builder.position_at_end(&block);
+            }
         } else {
-            ctx.builder.position_at_end(&val_block);
+            // no instruction means we've got function parameter
+            let f = ctx.find_function_by_parameter(non_captured).expect("no function for parameter");
+            let block = f.get_first_basic_block().unwrap();
+            if let Some(i) = block.get_first_instruction() {
+                ctx.builder.position_before(&i);
+            } else {
+                ctx.builder.position_at_end(&block);
+            }
         }
 
         let boxed = ctx
@@ -65,10 +76,12 @@ fn compile_set_expr(ctx: &mut CodegenContext, e: &SetExpr) -> CompileResult {
             .left()
             .unwrap();
 
-        let box_instr = boxed.as_struct_value().as_instruction().unwrap();
-        // replacing all usages with a box
-        val_instr.replace_all_uses_with(&box_instr);
+        let boxed_struct = boxed.as_struct_value();
 
+        // replacing all usages with a box
+        boxed_struct.replace_all_uses_with(*struct_val);
+
+        let box_instr = boxed_struct.as_instruction().unwrap();
         // now we can set correct argument to `make_box` call
         box_instr.set_operand(0, non_captured);
 
