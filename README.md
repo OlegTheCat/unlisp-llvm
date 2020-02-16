@@ -86,6 +86,21 @@ nil
 3
 ```
 
+### Mutability
+
+```
+>>> (let ((x 0))
+  (defun next ()
+    (set! x (+ x 1))))
+nil
+>>> (next)
+1
+>>> (next)
+2
+>>> (next)
+3
+```
+
 ### Global variables
 
 ```
